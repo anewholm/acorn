@@ -126,9 +126,7 @@ Trait PathsHelper {
 
     protected function docRoot(): string
     {
-        // TODO: replace getcwd() with base_path() — getcwd() returns the document root (public/)
-        // under PHP-FPM, not the application root, breaking pluginPathAbsolute() lookups.
-        return getcwd();
+        return base_path();
     }
 
     protected function pluginPathAbsolute(Object $object = NULL): string
@@ -358,14 +356,14 @@ Trait PathsHelper {
         return "$author\\$plugin\\Controllers\\$name";
     }
 
-    public function controllerDirectoryPathRelative(Object $object = NULL, bool $checkThrow = FALSE): string
+    public function controllerDirectoryPathRelative(Object $object = NULL, bool $checkThrow = FALSE): ?string
     {
         $pluginPathRelative      = $this->pluginPathRelative();
         $controllerDirectoryName = $this->controllerDirectoryName();
         $path = "$pluginPathRelative/controllers/$controllerDirectoryName";
-        if (!is_dir($path)) { 
-            $path = NULL;
+        if (!is_dir(base_path($path))) {
             if ($checkThrow) throw new Exception("Path [$path] does not exist");
+            return null;
         }
         return $path;
     }

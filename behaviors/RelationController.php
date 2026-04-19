@@ -247,7 +247,8 @@ class RelationController extends RelationControllerBase
         //   if ($this->toolbarWidget = $this->makeToolbarWidget()) {
         //       $this->toolbarWidget->bindToController();
         //   }
-        $controllerDir  = $model->controllerDirectoryPathRelative(); // plugins/...
+        $controllerDir = $model->controllerDirectoryPathRelative(); // plugins/...
+        if (!$controllerDir) return;
         $relationConfig = "$controllerDir/config_relation.yaml";
 
         if (File::exists($relationConfig)) {
