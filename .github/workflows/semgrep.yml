@@ -32,4 +32,8 @@ jobs:
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
+          config: >-
+            paths-ignore:
+              - partials/_phpinfo.php
+              - assets/js/pusher-js.js
           sarif_file: semgrep.sarif
