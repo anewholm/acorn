@@ -14,7 +14,7 @@ function acorn_updateViewSelectionLink() {
     urlParts.push('update');
     urlParts.push(modelUuid);
     var updateUrl = '/' + urlParts.join('/');
-    jA.attr('href', updateUrl);
+    jA.attr('href', encodeURI(updateUrl));
     jGotoLink.show();
   } else {
     jGotoLink.hide();
@@ -248,7 +248,7 @@ function acorn_hideEmptyTabs() {
       // that are now hidden
       var jLI  = $(this);
       var id   = jLI.children('a[data-target]').attr('data-target');
-      var jTab = $(id);
+      var jTab = $(encodeURI(id));
 
       // Tab contents disappear
       var hasFields = jTab.find('.form-group').length;
@@ -265,8 +265,9 @@ function acorn_ready(){
     if (jTd.length) {
       var text = jTd.text().trim();
       if (text.substr(0,14) == 'View menu for ') {
-        var model = text.substr(14);
-        jTd.html('View menu for <span class="model-name">' + model + '</span>');
+        var modelName = text.substr(14);
+        var jSpan = $('<span>').innerText(modelName).addClass('model-name');
+        jTd.innerText('View menu for ').appendChild(jSpan);
         jTr.addClass('sub-section');
       }
     }
