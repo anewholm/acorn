@@ -420,4 +420,26 @@ SQL
         $null = ($nullable ? '' : 'NOT NULL');
         DB::unprepared("alter table $table add column $column integer[] $null;");
     }
+
+    public function dateRange(string $table, string $column, bool $nullable = false, string $default = 'daterange(CURRENT_DATE, NULL)'): void
+    {
+        $null = $nullable ? '' : 'NOT NULL';
+        DB::unprepared("ALTER TABLE $table ADD COLUMN $column daterange $null DEFAULT $default");
+    }
+
+    public function addGistIndex(string $table, array $columns, ?string $name = null): string
+    {
+        $this->createExtension('btree_gist');
+        $cols = implode(', ', $columns);
+        $name = $name ?? $table . '_' . implode('_', array_map(fn($c) => preg_replace('/[^a-zA-Z0-9]/', '_', $c), $columns)) . '_gist';
+        DB::unprepared("CREATE INDEX $name ON $table USING GIST ($cols)");
+        return $name;
+    }
+
+    public function addExcludeConstraint(string $table, array $columnOperators, string $name): void
+    {
+        $this->createExtension('btree_gist');
+        $cols = implode(', ', $columnOperators);
+        DB::unprepared("ALTER TABLE $table ADD CONSTRAINT $name EXCLUDE USING GIST ($cols)");
+    }
 }
