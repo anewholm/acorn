@@ -442,4 +442,27 @@ SQL
         $cols = implode(', ', $columnOperators);
         DB::unprepared("ALTER TABLE $table ADD CONSTRAINT $name EXCLUDE USING GIST ($cols)");
     }
+
+    /**
+     * Add a temporal date-range versioning pattern to a membership-style table:
+     *   - daterange period column (NOT NULL, open-ended default = active)
+     *   - GiST index on (groupColumn, period) for fast point-in-time queries
+     *   - EXCLUDE constraint preventing overlapping periods for the same (user, group) pair
+     *
+     * Supports leave-and-rejoin: sequential non-overlapping rows are allowed.
+     */
+    public function addDateRangeVersioning(
+        string $table,
+        string $periodColumn = 'period',
+        string $userColumn   = 'user_id',
+        string $groupColumn  = 'user_group_id'
+    ): void {
+        $this->dateRange($table, $periodColumn);
+        $this->addGistIndex($table, [$groupColumn, $periodColumn]);
+        $this->addExcludeConstraint(
+            $table,
+            ["$userColumn WITH =", "$groupColumn WITH =", "$periodColumn WITH &&"],
+            "{$table}_no_overlap"
+        );
+    }
 }
