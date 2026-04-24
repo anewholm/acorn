@@ -453,6 +453,7 @@ SQL
      */
     public function addDateRangeVersioning(
         string $table,
+        bool $addCurrentIndex = TRUE,
         string $periodColumn = 'period',
         string $userColumn   = 'user_id',
         string $groupColumn  = 'user_group_id'
@@ -464,5 +465,13 @@ SQL
             ["$userColumn WITH =", "$groupColumn WITH =", "$periodColumn WITH &&"],
             "{$table}_no_overlap"
         );
+
+        if ($addCurrentIndex) {
+            // Fast lookup: current members per group (open-ended upper bound)
+            DB::unprepared(
+                "CREATE INDEX {$table}_current ON $table ($groupColumn) WHERE upper_inf($periodColumn)"
+            );
+        }
+
     }
 }
