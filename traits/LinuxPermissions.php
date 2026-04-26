@@ -17,7 +17,8 @@ trait LinuxPermissions
     {
         // Acorn\User is an optional plugin; if absent, skip permission checks
         if (!class_exists('Acorn\User\Models\User')) return true;
-        $user    = \Acorn\User\Models\User::authUser();
+        $user = \Acorn\User\Models\User::authUser();
+        if (is_null($user)) return true;
         $groups  = $user->groups->keyBy('id');
 
         $noOwner = is_null($this->owner_user);
