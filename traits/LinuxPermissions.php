@@ -42,8 +42,6 @@ trait LinuxPermissions
     public function canWrite()  { return $this->permissionsObject()->can(self::$WRITE); }
     public function canDelete() { return $this->permissionsObject()->can(self::$DELETE); }
 
-    // TODO: SECURITY: Read security
-    /*
     public function getAttributes()
     {
         $attributes = parent::getAttributes();
@@ -52,7 +50,6 @@ trait LinuxPermissions
 
         return $attributes;
     }
-    */
 
     // TODO: These are base Model methods so they are incompatible with a Model that also implements them
     // Move all this in to a base class and a Controller::$implement (like Winter does)?

@@ -87,22 +87,6 @@ class Controller extends BackendController
                 $this->addJs("$relativePluginPath/$relativeAssetPath");
         });
 
-        // Files commonly get loaded in popups, so we always include this widget
-        // TODO: Hardcoded testing to be removed
-        /*
-        if (class_exists('\Acorn\Justice\Models\ScannedDocument')) {
-            // Users controller goes in to a loop for some reason
-            if (!$this instanceof \Acorn\User\Controllers\Users) {
-                $config = array(
-                    'valueFrom' => 'document',
-                    'model'     => new \Acorn\Justice\Models\ScannedDocument,
-                );
-                $pseudoUpload = new \Backend\Classes\FormField('ScannedDocument[document]', 'Document');
-                $pseudoUpload->displayAs('text', $config);
-                $this->widget->formDocument = new \Backend\FormWidgets\FileUpload($this, $pseudoUpload, $config);
-            }
-        }
-        */
     }
 
     public function bodyClassAdjust(): void
@@ -379,7 +363,7 @@ class Controller extends BackendController
         // $formExportHtml  = $formExport->render();
 
         // ------------------------------- Build the Custom Form widget
-        // TODO: The model for the form should be the BatchPrint edplort model
+        // TODO: The model for the form should be the BatchPrint export model
         // with the tmeplate already set
         // Not the actual Certificate model to be printed
         $configDir    = '$/../modules/acorn/behaviors/batchprintcontroller/partials';
