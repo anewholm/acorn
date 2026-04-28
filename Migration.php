@@ -372,8 +372,11 @@ SQL
     public function addUniqueConstraint(string $table, array $columns, string $name = NULL): string
     {
         if (is_null($name)) $name = "{$table}_" . implode('_', $columns);
-        $columnString = implode(', ', $columns);
-        DB::unprepared("ALTER TABLE IF EXISTS $table ADD CONSTRAINT $name UNIQUE ($columnString);");
+        $exists = DB::selectOne('SELECT 1 FROM pg_constraint WHERE conname = ?', [$name]);
+        if (!$exists) {
+            $columnString = implode(', ', $columns);
+            DB::unprepared("ALTER TABLE IF EXISTS $table ADD CONSTRAINT $name UNIQUE ($columnString);");
+        }
 
         return $name;
     }

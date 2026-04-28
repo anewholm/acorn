@@ -3,6 +3,7 @@
 use Request;
 use Exception;
 use Winter\Translate\Behaviors\TranslatableModel as WinterTranslatableModel;
+use Winter\Translate\Classes\Translator;
 use Winter\Storm\Html\Helper as HtmlHelper;
 use Winter\Storm\Database\Model;
 
@@ -39,16 +40,39 @@ class TranslatableModel extends WinterTranslatableModel
         // TranslatableModel binds $model model.afterCreate
         //   => storeTranslatableBasicData()
         //     Db::table('winter_translate_attributes')->insert(translatableAttributes)
+
+        // Guard: during artisan seeding the Translator singleton may not be fully booted
+        // when the behavior constructor runs, leaving these properties uninitialized.
+        // Laravel's error handler converts the resulting E_WARNING to an ErrorException.
+        // Use local vars to avoid property-setting through the extension dispatch layer.
+        $translatableDefault = isset($this->translatableDefault)
+            ? $this->translatableDefault
+            : Translator::instance()->getDefaultLocale();
+        $translatableContext = isset($this->translatableContext)
+            ? $this->translatableContext
+            : $translatableDefault;
+
         if ($locale == null) {
-            $locale = $this->translatableContext;
+            $locale = $translatableContext;
         }
 
         // 1-1 chain translation values saving
         // $this->model->attributes was having relationship arrays set on it, entity => [user_group => name] and crashing
         // Instead we ascertain the correct nested model
         // so it will set the translated names on university => entity => user_group, not on university
-        $translatableModel = &$this;
-        $model    = &$this->model;
+        //
+        // $this may be the model (not the behavior) when called via model.__call extension dispatch.
+        // Resolve to the actual behavior to get access to translatableAttributes etc.
+        if (method_exists($this, 'getClassExtension')) {
+            // $this is the model (has extension dispatch); get the actual behavior
+            $translatableModel = $this->getClassExtension('Acorn.Behaviors.TranslatableModel')
+                ?? $this->getClassExtension('Winter.Translate.Behaviors.TranslatableModel');
+            $model = $this;
+        } else {
+            // $this is the behavior (normal case)
+            $translatableModel = $this;
+            $model = $this->model;
+        }
         $keyArray = HtmlHelper::nameToArray($key);
         $isNested = (count($keyArray) > 1);
         if ($isNested) {
@@ -89,7 +113,7 @@ class TranslatableModel extends WinterTranslatableModel
         }
         
         // Set the attributes on the final model
-        if ($locale == $this->translatableDefault) {
+        if ($locale == $translatableDefault) {
             // Set the name attribute directly
             $model->attributes[$key] = $value;
         } else {
@@ -110,16 +134,31 @@ class TranslatableModel extends WinterTranslatableModel
         // Result should not return NULL to successfully hook beforeGetAttribute event
         $result = '';
 
+        $translatableDefault = isset($this->translatableDefault)
+            ? $this->translatableDefault
+            : Translator::instance()->getDefaultLocale();
+        $translatableContext = isset($this->translatableContext)
+            ? $this->translatableContext
+            : $translatableDefault;
+
         if ($locale == null) {
-            $locale = $this->translatableContext;
+            $locale = $translatableContext;
         }
 
         // 1-1 chain translation values saving
         // $this->model->attributes was having relationship arrays set on it, entity => [user_group => name] and crashing
         // Instead we ascertain the correct nested model
         // so it will set the translated names on university => entity => user_group, not on university
-        $translatableModel = &$this;
-        $model    = &$this->model;
+        if (method_exists($this, 'getClassExtension')) {
+            // $this is the model (has extension dispatch); get the actual behavior
+            $translatableModel = $this->getClassExtension('Acorn.Behaviors.TranslatableModel')
+                ?? $this->getClassExtension('Winter.Translate.Behaviors.TranslatableModel');
+            $model = $this;
+        } else {
+            // $this is the behavior (normal case)
+            $translatableModel = $this;
+            $model = $this->model;
+        }
         $keyArray = HtmlHelper::nameToArray($key);
         $isNested = (count($keyArray) > 1);
         if ($isNested) {

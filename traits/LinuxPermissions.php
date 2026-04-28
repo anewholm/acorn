@@ -19,18 +19,26 @@ trait LinuxPermissions
         if (!class_exists('Acorn\User\Models\User')) return true;
         $user = \Acorn\User\Models\User::authUser();
         if (is_null($user)) return true;
-        $groups  = $user->groups->keyBy('id');
+        $groups = $user->groups->keyBy('id');
 
-        $noOwner = is_null($this->owner_user);
-        $isOwner = ($user->id == $this->owner_user?->id);
-        $inGroup = ($groups->get($this->owner_user_group?->id));
+        // Access raw attributes directly to avoid recursive getAttributes() call:
+        // can() is called from getAttributes(), so any attribute accessor that goes
+        // through getAttribute() → getAttributeFromArray() → getAttributes() would loop.
+        $attrs        = $this->attributes;
+        $ownerId      = $attrs['owner_user_id'] ?? null;
+        $ownerGroupId = $attrs['owner_user_group_id'] ?? null;
+        $permissions  = $attrs['permissions'] ?? 0;
+
+        $noOwner     = is_null($ownerId);
+        $isOwner     = ($user->id === $ownerId);
+        $inGroup     = $groups->has($ownerGroupId);
         $isSuperUser = $user->is_superuser; // Redirected attribute to the backend user
 
         return $isSuperUser
             || $noOwner
-            || ($isOwner && $this->permissions & $accessType * self::$USER)
-            || ($inGroup && $this->permissions & $accessType * self::$GROUP)
-            ||              $this->permissions & $accessType * self::$OTHER;
+            || ($isOwner && $permissions & $accessType * self::$USER)
+            || ($inGroup && $permissions & $accessType * self::$GROUP)
+            ||              $permissions & $accessType * self::$OTHER;
     }
 
     public function permissionsObject()
