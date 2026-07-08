@@ -60,7 +60,6 @@ class Model extends BaseModel
     use Traits\PostGreSQLFieldTypeUtilities;
     use Traits\ImplementReplaces;
     use Traits\Dropdowns;
-    use \Illuminate\Database\Eloquent\Concerns\HasUuids; // Always distributed
     use TranslateBackend;
     use \Staudenmeir\EloquentHasManyDeep\HasRelationships; // hasOneOrManyDeep()
     use \Staudenmeir\EloquentHasManyDeep\HasTableAlias;
@@ -164,19 +163,19 @@ class Model extends BaseModel
     {
         // Returns $this if no relation with ['name' => TRUE]
         $model = $this;
-        
+
         do {
             // 1-1 name relation support, including hasManyDeep 1-1 name
             $nameObjectRelation = NULL;
             $relations1to1Name  = array_merge($model->hasManyDeep, $model->belongsTo);
             foreach ($relations1to1Name as $relationName => &$relationConfig) {
-                $isNameRelation = (is_array($relationConfig) 
-                    && isset($relationConfig['name']) 
+                $isNameRelation = (is_array($relationConfig)
+                    && isset($relationConfig['name'])
                     && $relationConfig['name'] === TRUE
                 );
                 if ($isNameRelation) {
                     $nameObjectRelation = $model->$relationName();
-                    $model              = $nameObjectRelation->sole(); 
+                    $model              = $nameObjectRelation->sole();
                     // There may be multiple, but we take the first
                     // ordered by HasManyDeep first
                     break;
@@ -212,7 +211,7 @@ class Model extends BaseModel
         // We also allow RelationShip 'delete' for belongsTo relations
         // https://wintercms.com/docs/v1.2/docs/database/relations#detailed-relation-methods
         foreach ($this->belongsTo as $name => $relation) {
-            if (isset($relation['delete']) && $relation['delete'] && $this->$name) 
+            if (isset($relation['delete']) && $relation['delete'] && $this->$name)
                 $this->$name->delete();
         }
 
@@ -229,7 +228,7 @@ class Model extends BaseModel
         $paramsMerged      = array();
         $unsatisfiedParams = array();
         $purgeableAtts     = $this->getOriginalPurgeValues();
-        
+
         foreach ($fnParams as $paramName => $paramType) {
             $value     = NULL;
             $thisName  = preg_replace('/^p_/', '', $paramName);
@@ -245,11 +244,11 @@ class Model extends BaseModel
                     // Explicit values sent
                     if ($values && isset($values[$paramName])) {
                         $value = $values[$paramName];
-                    } 
+                    }
                     // Purgeable form values
                     else if (isset($purgeableAtts[$purgeName])) {
                         $value = $purgeableAtts[$purgeName];
-                    } 
+                    }
                     // Model attributes
                     else if (isset($this->attributes[$thisName])) {
                         $value = $this->attributes[$thisName];
@@ -296,8 +295,8 @@ class Model extends BaseModel
         }
         $placeString  = implode(',', $placeholders);
 
-        $sql = ($returnRecordSet 
-            ? "select * from $fnDatabaseName($placeString)" 
+        $sql = ($returnRecordSet
+            ? "select * from $fnDatabaseName($placeString)"
             : "select $fnDatabaseName($placeString) as result"
         );
         $results = DB::select($sql, $bindings);
@@ -352,7 +351,7 @@ class Model extends BaseModel
             foreach ($this->beforeFunctions as $name => $definition) {
                 [$paramsMerged, $unsatisfiedParams] = $this->assembleParameters($name, $definition['parameters']);
                 self::bindAndRunFunction(
-                    $definition['fnDatabaseName'], 
+                    $definition['fnDatabaseName'],
                     array_pluck($paramsMerged, 'value')
                 );
             }
@@ -365,13 +364,13 @@ class Model extends BaseModel
     protected function afterCreate()
     {
         parent::afterCreate();
-        
+
         if ($this->afterFunctions) {
             foreach ($this->afterFunctions as $name => $definition) {
                 [$paramsMerged, $unsatisfiedParams] = $this->assembleParameters($name, $definition['parameters']);
                 if (!$unsatisfiedParams) {
                     self::bindAndRunFunction(
-                        $definition['fnDatabaseName'], 
+                        $definition['fnDatabaseName'],
                         array_pluck($paramsMerged, 'value')
                     );
                 }
@@ -396,7 +395,7 @@ class Model extends BaseModel
         // -------------------------------------------- Object locking and dirty writing
         // Does not save(), may throw ObjectIsLocked()
         if (!isset($options['UNLOCK']) || $options['UNLOCK'] == TRUE) {
-            if ($user) $this->unlock($user); 
+            if ($user) $this->unlock($user);
         }
 
         // Dirty Writing checks in fill() include a passed original updated_at field
@@ -410,7 +409,7 @@ class Model extends BaseModel
         $result = NULL;
         try {
             $result = parent::save($options, $sessionKey);
-        } 
+        }
         // Last chance error formatting for some presentable & understandable SQL problems
         catch (QueryException $qe) {
             $this->throwNiceSqlError($qe);
@@ -441,7 +440,7 @@ class Model extends BaseModel
 
         return $result;
     }
-    
+
     public static function nextNewModelId(): int
     {
         static $nextNewModelId = 0;
@@ -465,10 +464,10 @@ class Model extends BaseModel
                 $ordinal  = $ordinals[$value % 10];
                 if ((($value % 100) >= 11) && (($value % 100) <= 13)) $ordinal = 'th';
             } else {
-                $ordinal = ''; 
+                $ordinal = '';
             }
         }
-        
+
         return $ordinal;
     }
 
@@ -497,7 +496,7 @@ class Model extends BaseModel
                         ? $model->controllerUrl('update')
                         : NULL
                     );
-                    
+
                     // Callers job to not escape the HTML
                     if ($name && $modelName && $useDelimeter) $name .= "<span class='delimeter'>$delimeter</span>";
                     $name .= "<span class='$class'>";
@@ -532,7 +531,7 @@ class Model extends BaseModel
         // $query->eagerLoadRelations([$this]);
 
         foreach ($nameRelations as $name) {
-            // Global Scopes would load many users 
+            // Global Scopes would load many users
             // and hide names of restricted objects
             // first() because this is a belongsTo
             array_push($nameModels, $this->$name()->withoutGlobalScopes()->first());
@@ -567,8 +566,8 @@ class Model extends BaseModel
                         if (!$checked || in_array($id, $checked)) {
                             // Int|NULL id indicates that the model is new
                             // Existing models use string UUIDs
-                            $model = (is_null($id) || is_int($id) 
-                                ? new $modelName() 
+                            $model = (is_null($id) || is_int($id)
+                                ? new $modelName()
                                 : $modelName::find($id)
                             );
 
@@ -697,8 +696,8 @@ class Model extends BaseModel
         'hasManyThrough' => 'hasManyThrough',
         'hasManyDeep'    => 'hasManyDeep',
     ];
-    
-    // VERSION: Winter 1.2.6=>7 change of function signature: 
+
+    // VERSION: Winter 1.2.6=>7 change of function signature:
     // https://stackoverflow.com/questions/39034442/preprocessing-like-if-defined-in-php
     //   $addConstraints and Relation return type hint added?
     //   1.2.6: protected function handleRelation($relationName)
@@ -723,12 +722,12 @@ class Model extends BaseModel
                     $throughRelationObject = $throughRelationInstance->$throughRelationName();
                     array_push($throughRelationObjects, $throughRelationObject);
                     $lastRelation = $throughRelationObject;
-                    
+
                     // Traverse the actual instances for the loaded Models, until we meet a collection
                     // then traverse the Models only
                     // This is to ensure that $parent is set on the throughRelations for save()ing
                     $throughRelationInstance = $throughRelationInstance->$throughRelationName;
-                    if (! $throughRelationInstance instanceof BaseModel) 
+                    if (! $throughRelationInstance instanceof BaseModel)
                         $throughRelationInstance  = $throughRelationObject->getRelated();
                 }
 
@@ -741,14 +740,14 @@ class Model extends BaseModel
 
                 // Assemble parameters for HasManyDeep __constructor()
                 // https://github.com/staudenmeir/eloquent-has-many-deep?tab=readme-ov-file#manytomany
-                // Double many-to-many chain from Models & tables: 
+                // Double many-to-many chain from Models & tables:
                 //   $user->hasManyDeep(Permission::class, ['role_user', Role::class, 'permission_role']);
                 //     return $this->newHasManyDeep(...$this->hasOneOrManyDeep($related, $through, $foreignKeys, $localKeys));
                 //       return new HasManyDeep($query, $farParent, $throughParents, $foreignKeys, $localKeys);
                 //   Note the 2 x stated intermediate pivot tables at each stage
                 //
                 // Double many-to-many chain from Relation Objects:
-                //   $user->hasManyDeepFromRelations($user->roles(), (new Role)->permissions()) 
+                //   $user->hasManyDeepFromRelations($user->roles(), (new Role)->permissions())
                 //     $user->hasManyDeep(...$this->hasOneOrManyDeepFromRelations($relations));
                 //       return $this->newHasManyDeep(...$this->hasOneOrManyDeep($related, $through, $foreignKeys, $localKeys));
                 //         return new HasManyDeep($query, $farParent, $throughParents, $foreignKeys, $localKeys);
@@ -776,7 +775,7 @@ class Model extends BaseModel
                     $model = $this->newRelatedDeepThroughInstance($throughEntry);
                     // TODO: For now, we turn timestamps OFF for AA Pivot situations
                     if ($model instanceof Pivot) $model->timestamps = FALSE;
-                    
+
                     // Aliases to prevent repeating model table duplication in the SQL from clause
                     // Note that these aliases will cause issues with certain services later
                     // like ->withIntermediate(class) which cannot find its normal table
@@ -787,7 +786,7 @@ class Model extends BaseModel
                         $model->setAlias($table);
                     }
                     $tableConflicts[$table] = 1;
-                    
+
                     array_push($throughParents, $model);
                 }
 
@@ -1076,7 +1075,7 @@ SQL;
     {
         // When there is a globalScope in action on NestedTrees
         // we need to fake chroot() using a NULL parent
-        if (GlobalChainScope::isEndSelectedFrom($this, 'hierarchy')) 
+        if (GlobalChainScope::isEndSelectedFrom($this, 'hierarchy'))
             $parent_id = NULL;
         return $parent_id;
     }
@@ -1140,15 +1139,15 @@ SQL;
                         if ($this->exists) unset($actionFunctions[$name]);
                         else {
                             $results = DB::select($condition);
-                            if (!isset($results[0]) || array_values((array)$results[0])[0] == 0) 
+                            if (!isset($results[0]) || array_values((array)$results[0])[0] == 0)
                                 unset($actionFunctions[$name]);
                         }
                     } else {
                         // Per-model query
                         if ($this->exists) {
-                            if (self::where('id', $this->id)->whereRaw($condition)->count() == 0) 
+                            if (self::where('id', $this->id)->whereRaw($condition)->count() == 0)
                                 unset($actionFunctions[$name]);
-                        } 
+                        }
                         // Not relevant because no model
                         else unset($actionFunctions[$name]);
                     }
@@ -1168,13 +1167,13 @@ SQL;
                         // Write the sub-model id
                         foreach ($relatedModel->actionFunctions as $name => &$actionFunctionDefinition) {
                             $type = $actionFunctionDefinition['type'] ?? NULL;
-                            
-                            if (   is_null($typeLimit) 
+
+                            if (   is_null($typeLimit)
                                 || ( $type && $typeLimit == $type)
                                 || (!$type && $typeLimit == 'row')
                             ) {
                                 $condition = $actionFunctionDefinition['condition'] ?? NULL;
-                                if ($condition && !$relatedModel->exists) 
+                                if ($condition && !$relatedModel->exists)
                                     throw new Exception('Related Model does not exist during row type condition evaluation');
                                 if (!$condition || ($relatedModel->whereRaw($condition)->count() != 0)) {
                                     // Populate the Model/Id for correct lookup later
@@ -1479,8 +1478,8 @@ SQL;
             //   location: @source_location
             // TODO: emptyOption?
             foreach ($fields as $name => &$field) {
-                if (   isset($field->config['options']) 
-                    && isset($field->config['dependsOn']) 
+                if (   isset($field->config['options'])
+                    && isset($field->config['dependsOn'])
                     && is_callable($field->config['options'])
                     && (
                            isset($field->config['withoutGlobalScopes'])
@@ -1496,10 +1495,10 @@ SQL;
                     $optionClass     = explode('::', $optionsCall)[0];
                     $optionModel     = new $optionClass;
                     $builder         = $optionModel::select();
-                    
-                    if (isset($field->config['withoutGlobalScopes']) && $field->config['withoutGlobalScopes']) 
+
+                    if (isset($field->config['withoutGlobalScopes']) && $field->config['withoutGlobalScopes'])
                         $builder->withoutGlobalScopes();
-                    if (isset($field->config['optionsWith'])) 
+                    if (isset($field->config['optionsWith']))
                         $builder->with($field->config['optionsWith']);
 
                     // optionsWhere:
@@ -1513,7 +1512,7 @@ SQL;
                         $whereProperties = $field->config['optionsWhere'];
                         foreach ($whereProperties as $whereProperty => $whereClauses) {
                             if (is_array($whereClauses)) {
-                                // location: 
+                                // location:
                                 //   - @source_location
                                 //   - sumink
                                 // TODO: Relation Extended config options where clause
@@ -1570,8 +1569,8 @@ SQL;
                                 if (preg_match_all('/[^:]:([a-z_]+)/', $condition, $tokens)) {
                                     foreach ($tokens[1] as $fieldName) {
                                         $fieldNameBare = preg_replace('/_id$/', '', $fieldName);
-                                        $value = (isset($fields->$fieldName) 
-                                            ? $fields->$fieldName->value 
+                                        $value = (isset($fields->$fieldName)
+                                            ? $fields->$fieldName->value
                                             : $fields->$fieldNameBare->value
                                         );
                                         // Argon and Datetime must be suffixed with timestamp without time zone in the condition

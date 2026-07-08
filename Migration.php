@@ -401,9 +401,15 @@ SQL
         DB::unprepared("alter table \"$table\" alter column \"$column\" set default $function()");
     }
 
-    public function generated(string $table, string $column, string $function, string $type = 'character varying(1024)')
+    public function addColumnIfNotExists(string $table, string $column, string $typeAndConstraints): void
     {
-        DB::unprepared("ALTER TABLE $table ADD COLUMN $column $type GENERATED ALWAYS AS ($function) STORED");
+        DB::unprepared("ALTER TABLE $table ADD COLUMN IF NOT EXISTS $column $typeAndConstraints");
+    }
+
+    public function generated(string $table, string $column, string $function, string $type = 'character varying(1024)', bool $ifNotExists = false)
+    {
+        $guard = $ifNotExists ? 'IF NOT EXISTS ' : '';
+        DB::unprepared("ALTER TABLE $table ADD COLUMN {$guard}$column $type GENERATED ALWAYS AS ($function) STORED");
     }
 
     public function interval(string $table, string $column, ?bool $nullable = FALSE)
@@ -448,20 +454,28 @@ SQL
 
     /**
      * Add a temporal date-range versioning pattern to a membership-style table:
-     *   - daterange period column (NOT NULL, open-ended default = active)
-     *   - GiST index on (groupColumn, period) for fast point-in-time queries
+     *   - started_at DATE NOT NULL DEFAULT CURRENT_DATE
+     *   - ended_at   DATE NULL (NULL = open-ended / still active)
+     *   - period     DATERANGE GENERATED ALWAYS AS (daterange(started_at, ended_at, '[)')) STORED
+     *   - GiST index on (groupColumn, period) for fast point-in-time and overlap queries
      *   - EXCLUDE constraint preventing overlapping periods for the same (user, group) pair
+     *   - Partial index on (groupColumn) WHERE upper_inf(period) for fast current-members lookup
      *
      * Supports leave-and-rejoin: sequential non-overlapping rows are allowed.
+     * UI uses started_at / ended_at date pickers; period is kept in sync automatically.
      */
     public function addDateRangeVersioning(
         string $table,
-        bool $addCurrentIndex = TRUE,
-        string $periodColumn = 'period',
-        string $userColumn   = 'user_id',
-        string $groupColumn  = 'user_group_id'
+        bool $addCurrentIndex    = TRUE,
+        string $periodColumn     = 'period',
+        string $startedAtColumn  = 'started_at',
+        string $endedAtColumn    = 'ended_at',
+        string $userColumn       = 'user_id',
+        string $groupColumn      = 'user_group_id'
     ): void {
-        $this->dateRange($table, $periodColumn);
+        $this->addColumnIfNotExists($table, $startedAtColumn, 'DATE NOT NULL DEFAULT CURRENT_DATE');
+        $this->addColumnIfNotExists($table, $endedAtColumn, 'DATE');
+        $this->generated($table, $periodColumn, "daterange($startedAtColumn, $endedAtColumn, '[)')", 'daterange', true);
         $this->addGistIndex($table, [$groupColumn, $periodColumn]);
         $this->addExcludeConstraint(
             $table,
@@ -475,6 +489,5 @@ SQL
                 "CREATE INDEX {$table}_current ON $table ($groupColumn) WHERE upper_inf($periodColumn)"
             );
         }
-
     }
 }

@@ -32,6 +32,11 @@ class HasManyDeep extends StaudenmeirHasManyDeep
         $this->addDefinedConstraints();
     }
 
+    protected function getRelationArgs(): array
+    {
+        return $this->farParent->getRelationDefinition($this->relationName);
+    }
+
     protected function getLastRelation(): Relation
     {
         return last($this->throughRelationObjects);
