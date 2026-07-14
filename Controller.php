@@ -57,7 +57,7 @@ class Controller extends BackendController
 
         Event::listen('backend.form.extendFields', function($widget) {
             foreach ($widget->getFields() as $field) {
-                if (method_exists($field, 'addViewPath')) 
+                if (method_exists($field, 'addViewPath'))
                     $field->addViewPath('~/modules/acorn/partials');
             }
             $widget->addViewPath('~/modules/acorn/partials');
@@ -87,6 +87,22 @@ class Controller extends BackendController
                 $this->addJs("$relativePluginPath/$relativeAssetPath");
         });
 
+        // Files commonly get loaded in popups, so we always include this widget
+        // TODO: Hardcoded testing to be removed
+        /*
+        if (class_exists('\Acorn\Justice\Models\ScannedDocument')) {
+            // Users controller goes in to a loop for some reason
+            if (!$this instanceof \Acorn\User\Controllers\Users) {
+                $config = array(
+                    'valueFrom' => 'document',
+                    'model'     => new \Acorn\Justice\Models\ScannedDocument,
+                );
+                $pseudoUpload = new \Backend\Classes\FormField('ScannedDocument[document]', 'Document');
+                $pseudoUpload->displayAs('text', $config);
+                $this->widget->formDocument = new \Backend\FormWidgets\FileUpload($this, $pseudoUpload, $config);
+            }
+        }
+        */
     }
 
     public function bodyClassAdjust(): void
@@ -116,13 +132,13 @@ class Controller extends BackendController
 
     public function isClassExtendedWith($name) {
         // Winter hard codes behavior requirements sometimes
-        // for example: 
-        //   EventRegistry::registerModelTranslation() 
+        // for example:
+        //   EventRegistry::registerModelTranslation()
         //   requires Winter.Translate.Behaviors.TranslatableModel
         // Here we fake the implemntation in favor of our sub-class
         return parent::isClassExtendedWith($name)
             || (
-                isset($this->implementReplaces) 
+                isset($this->implementReplaces)
                 && in_array($name, $this->implementReplaces)
             );
     }
@@ -130,7 +146,7 @@ class Controller extends BackendController
     // ------------------------------------------ Custom Actions
     public function runAlias(string $alias = 'index')
     {
-        // Example: 
+        // Example:
         // public function courseplanner()
         // {
         //     return $this->runAlias('index');
@@ -177,7 +193,7 @@ class Controller extends BackendController
         $controllerDir      = new \DirectoryIterator("$pluginPathAbsolute/controllers");
         $thisFQN            = get_class($this);
         $this->pageTitle    = trans('acorn::lang.models.general.all_controllers');
-        
+
         // Sorted list
         $orderedFileList    = array();
         foreach ($controllerDir as $fileinfo) {
@@ -264,7 +280,7 @@ class Controller extends BackendController
 
     public function onListActionTemplate()
     {
-        // Options popup for multi-printing of this 
+        // Options popup for multi-printing of this
         // controller's List context
         $template    = post('template');
         $breadcrumb  = post('breadcrumb');
@@ -337,10 +353,10 @@ class Controller extends BackendController
                 $labelEscaped = e(trans($transKey));
                 $valueEscaped = e($value);
                 $class        = (
-                       stristr($transKey, 'warning') === FALSE 
-                    && stristr($transKey, 'missing') === FALSE 
+                       stristr($transKey, 'warning') === FALSE
+                    && stristr($transKey, 'missing') === FALSE
                     ? '' : 'warning'
-                ); 
+                );
                 $pdfTemplateDetails .= "<li class='$class'><label>$labelEscaped</label>: <span class='value'>$valueEscaped</span></li>";
             }
         }
@@ -363,7 +379,7 @@ class Controller extends BackendController
         // $formExportHtml  = $formExport->render();
 
         // ------------------------------- Build the Custom Form widget
-        // TODO: The model for the form should be the BatchPrint export model
+        // TODO: The model for the form should be the BatchPrint edplort model
         // with the tmeplate already set
         // Not the actual Certificate model to be printed
         $configDir    = '$/../modules/acorn/behaviors/batchprintcontroller/partials';
@@ -391,20 +407,20 @@ class Controller extends BackendController
         $popupTitle     = "$actionName $modelTitle";
         if ($breadcrumb) $breadcrumbs = explode(',', $breadcrumb);
         else             $breadcrumbs = array($unqualifiedControllerName, $popupTitle);
-        
+
         // Winter\Storm\Html\FormBuilder
         // The @action makes the onExport AJAX post to the ../export controller
         $formOpen  = Form::ajax('onExportLoadForm', [
-            'class' => 'layout popup-form', 
+            'class' => 'layout popup-form',
             'data-request-url'  => $postUrl,
             'data-request-data' => $dataRequestDataString,
-        ]); 
+        ]);
         $formCustomHtml  = $formCustom->render();
         $formClose = Form::close();
-        
-        // These attributes all work with the @data-control - @data-handler system 
+
+        // These attributes all work with the @data-control - @data-handler system
         // @data-load-indicator='$popupTitle...' does not seem to do anything
-        // NOTE: It is important that this main form remains 
+        // NOTE: It is important that this main form remains
         // and it has an @id=exportColumns field
         // because the export AJAX does this:
         //     var $form = $('#exportColumns').closest('form')
@@ -496,7 +512,7 @@ HTML
             </div>
 HTML;
     }
-    
+
     // TODO: These were made for the list view _multi editing popups. Is there not another way?
     public function onRefreshField()
     {
@@ -528,7 +544,7 @@ HTML;
             $result = Response::redirectTo($redirect);
         return $result;
     }
-        
+
     public function update_onDelete($context = NULL)
     {
         $result = parent::update_onDelete($context);
@@ -553,24 +569,24 @@ HTML;
         //             name: 'name (ku)'
         //  creates $this->formWidget with blank $model
         // => Form::$this->formWidget->getSaveData()
-        //  1) filter post() => $result array by valid [nested] field names (same structure) 
+        //  1) filter post() => $result array by valid [nested] field names (same structure)
         //     using dataArrayGet([entity][user_group]) => dataArraySet($result[entity][user_group])
         //     includes setting the $result[entity => user_group => name array]
         //  2) Form::$this->formWidgets opportunity to process the data
         //     same, but passing through:
-        //     => $widget->getSaveValue($result value) 
+        //     => $widget->getSaveValue($result value)
         //       => Trait MLControl::getLocaleSaveValue($value)
         //         $localeData = getLocaleSaveData() from post(RLTranslate)
         //         => TranslatableModel::$this->model->setAttributeTranslated() foreach locale
         //           to set the $model TranslatableModel::translatableAttributes
         //           BUT: 1-1 Relation TranslatableModel::$modelsToSave do not exist yet <===== PROBLEM !!
-        // => FormController::prepareModelsToSave($getSaveData) 
+        // => FormController::prepareModelsToSave($getSaveData)
         //   from reversed 1-1 relations => [UserGroup, Entity, Course]
         //   => Trait FormModelSaver::setModelAttributes() RECURSIVELY builds $this->modelsToSave
         //     using $model->hasRelation[BelongsTo]($attribute) to create 1-1 $this->modelsToSave
         //     and handling related records that don't exist yet with: $model->{$attribute}()->getRelated()
         //     => FormModelSaver::setModelAttributes($belongsToModel) ...
-        // Then Each $this->modelsToSave save(), in order, 
+        // Then Each $this->modelsToSave save(), in order,
         // with their new TranslatableModel::translatableAttributes
         // ...
         // TranslatableModel binds $model model.afterCreate
@@ -620,13 +636,13 @@ HTML;
         //     $this->model = $model;
         // Use the relevant to controller to handle the form render
         $fullyQualifiedControllerClass = $this->qualifyClassName($controllerClass);
-        if (!class_exists($fullyQualifiedControllerClass))  
+        if (!class_exists($fullyQualifiedControllerClass))
             throw new Exception("Controller [$fullyQualifiedControllerClass] does not exist");
         $controller = new $fullyQualifiedControllerClass;
-        if (!is_callable(array($controller, $popupAction))) 
+        if (!is_callable(array($controller, $popupAction)))
             throw new Exception("action method [$popupAction] does not exist on [$fullyQualifiedControllerClass]");
         $controller->$popupAction(...$popupParams);
-        if (!property_exists($controller->widget, 'form'))  
+        if (!property_exists($controller->widget, 'form'))
             throw new Exception("Failed to bind formWidget to controller [$fullyQualifiedControllerClass] during $popupAction($paramString)");
 
         $form    = &$controller->widget->form; // Backend\Widgets\Form
@@ -639,7 +655,7 @@ HTML;
         if (is_array(post('Fields'))) {
             foreach (post('Fields') as $fieldDirectiveName => $fieldDirectivesArray) {
                 $formField = $form->getField($fieldDirectiveName);
-                if (!$formField) 
+                if (!$formField)
                     throw new Exception("Fields directive [$fieldDirectiveName] has no target");
 
                 foreach ($fieldDirectivesArray as $directiveName => $directiveStringValue) {
@@ -731,7 +747,7 @@ HTML;
             >
                 $actionName
             </button>
-HTML; 
+HTML;
 
         return $this->makePopup($breadcrumbs, $body, $footer);
     }
@@ -780,21 +796,19 @@ HTML;
         // otherwise we will present a form
         //
         // List (without model), row and form (with model) functions come here
-        $response    = ''; 
+        $response    = '';
         $modelId     = post('modelId');
         $modelClass  = post('model');
         $fnName      = post('name');
         $postParams  = post('parameters') ?? array();
-        $user        = User::authUser();
         $backendUser = BackendAuth::user();
         $locale      = Lang::getLocale();
         $fnNameParts = explode('_', $fnName);
         $nameParts   = array_slice($fnNameParts, 5);
         $title       = e(trans(Str::title(implode(' ', $nameParts))));
         $modelName   = $this->unqualifiedClassName();
-        
+
         if (!$fnName)     throw new Exception("onActionFunction() had no POST name");
-        if (!$user)       throw new Exception("onActionFunction() requires logged in user with associated User::user");
         if (!$modelClass) throw new Exception("onActionFunction() had no POST Model class");
 
         // These will throw their own Exceptions
@@ -825,11 +839,11 @@ HTML;
             $hasPermission = TRUE;
         }
         if (!$hasPermission)
-            throw new Exception("User $user->name does not have permission to run this function");
+            throw new Exception("User $backendUser->login does not have permission to run this function");
 
         // Parameter gathering
         [$paramsMerged, $unsatisfiedParams] = $model->assembleParameters($fnName, $fnParams, $postParams);
-            
+
         if (count($unsatisfiedParams)) {
             // ---------------------------------------------------- Show a form
             // Construct the form configuration
@@ -909,7 +923,7 @@ HTML;
                         'type'    => 'dropdown',
                         'options' => "$modelClass::dropdownOptions",
                     ));
-                } 
+                }
 
                 // Override with function fields settings
                 // Properties are already converted to camel, but double checking here
@@ -920,7 +934,7 @@ HTML;
                     foreach ($defFields[$baseParamName] as $settingName => $value)
                         $config[Str::camel($settingName)] = $value;
                 }
-                
+
                 $formConfig['fields'][$fieldParametersName] = $config;
             }
 
@@ -929,7 +943,7 @@ HTML;
             $formOpen   = Form::open(['class' => 'layout popup-form']); // Winter\Storm\Html\FormBuilder
             $formHtml   = $form->render();
             $formClose  = Form::close();
-                
+
             // Data-request
             $dataRequest           = __FUNCTION__;
             $dataRequestData       = post();
@@ -967,15 +981,15 @@ HTML;
                     </button>
 HTML;
             $response = $this->makePopup(array($title), $body, $footer);
-        } 
-        
+        }
+
         else {
             // ---------------------------------------------------- Run the action function
             // The parameter order is critical here as they are not named parameters
             try {
                 $results = Model::bindAndRunFunction(
-                    $fnDatabaseName, 
-                    array_pluck($paramsMerged, 'value'), 
+                    $fnDatabaseName,
+                    array_pluck($paramsMerged, 'value'),
                     ($returnType == 'record')
                 );
             } catch (QueryException $qe) {
@@ -1009,7 +1023,7 @@ HTML;
             // Response
             switch ($resultAction) {
                 case 'model-uuid-redirect':
-                    if (!$path) 
+                    if (!$path)
                         throw new Exception('Path redirect requested without path');
                     if ($message) Flash::$type($message);
                     $response   = Redirect::to($path);
@@ -1136,7 +1150,7 @@ HTML;
         // getRequestedController($controller) uses:
         //   App::make($controller)
         $post = post();
-        if (   isset($post['column_order']) 
+        if (   isset($post['column_order'])
             && isset($post['_parent_model'])
             && !isset($params['redirected_controller'])
         ) {
@@ -1163,7 +1177,7 @@ HTML;
     {
         foreach (post() as $setting => $value) {
             $settingParts = explode('::', $setting);
-            if (isset($settingParts[1]) && $settingParts[1] == 'globalScope') 
+            if (isset($settingParts[1]) && $settingParts[1] == 'globalScope')
                 Session::put($setting, $value);
         }
         return Redirect::refresh();
@@ -1189,7 +1203,7 @@ HTML;
                 }
             }
         }
-        
+
         return parent::listExtendRecords($records);
     }
 

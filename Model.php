@@ -60,6 +60,7 @@ class Model extends BaseModel
     use Traits\PostGreSQLFieldTypeUtilities;
     use Traits\ImplementReplaces;
     use Traits\Dropdowns;
+    use \Illuminate\Database\Eloquent\Concerns\HasUuids; // Always distributed
     use TranslateBackend;
     use \Staudenmeir\EloquentHasManyDeep\HasRelationships; // hasOneOrManyDeep()
     use \Staudenmeir\EloquentHasManyDeep\HasTableAlias;
@@ -69,6 +70,8 @@ class Model extends BaseModel
         booted as protected loadRelationBooted;
     }
 
+    // TODO: Support UUID models
+    public function uniqueIds(): array { return []; } // Opt-in per model; default is DB GENERATED ALWAYS identity
     public const LE_DELETE_ON_NULL = 2; // Row deletes
     public const LE_FALSE_ON_NULL = 3;  // Useful for missing boolean checkbox values
 
@@ -238,7 +241,9 @@ class Model extends BaseModel
                     $value = $this->id;
                     break;
                 case 'user_id':
-                    if ($user = User::authUser()) $value = $user->id;
+                    $user = BackendAuth::user();
+                    if (class_exists(User::class)) $user = User::authUser();
+                    $value = $user->id;
                     break;
                 default:
                     // Explicit values sent
@@ -469,6 +474,48 @@ class Model extends BaseModel
         }
 
         return $ordinal;
+    }
+
+    public function baseModel(): Model
+    {
+        $oneToOneChain = $this->oneToOneChain();
+        return ($oneToOneChain ? end($oneToOneChain) : $this);
+    }
+
+    public function oneToOneChain(): array
+    {
+        $modelChain    = [];
+        $model         = $this;
+        $oneToOneChain = self::oneToOneChainFor($this);
+        foreach ($oneToOneChain as $relationName) {
+            $model = $model->$relationName;
+            $modelChain[$relationName] = $model;
+        }
+
+        return $modelChain;
+    }
+
+    public static function oneToOneChainFor(string|Model $model): array
+    {
+        // We want static, for existence queries
+        $chain = [];
+        if (is_string($model)) $model = new $model;
+        while ($model && property_exists($model, 'belongsTo')) {
+            // Only type=1to1
+            $oneToOnes = [];
+            foreach ($model->belongsTo as $relationName => $belongsTo) {
+                $type = $belongsTo['type'] ?? NULL;
+                if ($type == '1to1') array_push($oneToOnes, $relationName);
+            }
+            if (count($oneToOnes) == 1) {
+                $relationName = $oneToOnes[0];
+                array_push($chain, $relationName);
+                $model = $model->$relationName()->getRelated();
+            } else {
+                $model = NULL;
+            }
+        }
+        return $chain;
     }
 
     public function buildName(bool $html, string $delimeter, ...$nameModels): string

@@ -28,7 +28,7 @@ function acorn_translate_locale(jMLBtn) {
     case 'en': newText = 'English (English)'; break;
     case 'ar': newText = 'العربية (Arabic)';     break;
     case 'ku': newText = 'Kurdî (Kurdish)';   break;
-  } 
+  }
   if (newText && newText != oldText) jMLBtn.text(newText);
 }
 
@@ -194,7 +194,7 @@ function acorn_dynamicElements(){
           tableIsDirty = true;
         }
       });
-      
+
       if (rowIsDirty) {
         $(this).addClass('dirty');
         if (!jCheck.is(':checked')) jCheck.click();
@@ -225,7 +225,7 @@ function acorn_dynamicElements(){
           $(this).popup(this.attributes);
           event.preventDefault();
       }
-      
+
       event.stopPropagation();
       return isPopoup;
   });
@@ -266,15 +266,16 @@ function acorn_ready(){
       var text = jTd.text().trim();
       if (text.substr(0,14) == 'View menu for ') {
         var modelName = text.substr(14);
-        var jSpan = $('<span>').innerText(modelName).addClass('model-name');
-        jTd.innerText('View menu for ').appendChild(jSpan);
+        var jSpan = $('<span>').text(modelName).addClass('model-name');
+        jTd.text('View menu for ');
+        jTd.append(jSpan);
         jTr.addClass('sub-section');
       }
     }
   });
   // README.md screen
   $('.plugin-details-content > h1').addClass('collapsable');
-  
+
   $('div.control-toolbar .select2-container').click(function (event){
     // The toolbar dropdowns (e.g. ActionTemplates) are immediately submitting the form
     event.stopImmediatePropagation();
@@ -346,7 +347,7 @@ function acorn_popupComplete(context, textStatus, jqXHR) {
     }
   }
 }
-  
+
 +function ($) { "use strict";
   // --------------------------------------- Scrolling popups
   $(window).on('complete.oc.popup', function (event, $content, $popup) {
@@ -357,7 +358,7 @@ function acorn_popupComplete(context, textStatus, jqXHR) {
     var popupMain = $popups.first().data('oc.popup'); // Contains popup div collection
     var popupNew  = $popup.data('oc.popup'); // Whole new popup, to be injected and removed
     $popups.removeClass('loading');
-    
+
     if ($popups.length > 1 && popupMain) {
       popupMain.lock(true);
 
@@ -391,7 +392,7 @@ function acorn_popupComplete(context, textStatus, jqXHR) {
         $(this).attr('class', 'stage-' + i--);
       });
       $newBreadcrumbH4.html($previousBreadCrumbCB);
-      
+
       // Append
       // We cannot position: absolute because the content dictates the popup size
       var $newDiv = popupNew.$content.children('div').first();
@@ -419,7 +420,7 @@ function acorn_popupComplete(context, textStatus, jqXHR) {
     var $popupDivs = $popup.find(popupDivs);
     var popup      = $popup.data('oc.popup');
     $popups.removeClass('loading');
-    
+
     if ($popupDivs.length > 1) {
       var $lastDiv = $popupDivs.last();
       $lastDiv.css({opacity: '100%'}).animate({left: '90%', opacity: '10%'}, 1000, 'swing', function(){
@@ -430,7 +431,7 @@ function acorn_popupComplete(context, textStatus, jqXHR) {
       });
     } else if (popup.isOpen) {
       // This will trigger another hide.oc.popup event
-      // but this time isOpen == false 
+      // but this time isOpen == false
       popup.isOpen = false;
       popup.$modal.modal('hide'); // hide.bs.modal
     }
@@ -444,7 +445,7 @@ function acorn_popupComplete(context, textStatus, jqXHR) {
     // We show both
     var jControlPopup = $(this).closest('.control-popup');
     jControlPopup.addClass('loading');
-    if ($(this).data('request') == context.handler) 
+    if ($(this).data('request') == context.handler)
       jControlPopup.addClass('in');
   });
 }(window.jQuery);
