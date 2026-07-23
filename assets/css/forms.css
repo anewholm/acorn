@@ -13,6 +13,13 @@
     body .col-lg-new-row {clear: both;}
 }
 
+.field-richeditor[readonly] .fr-wrapper {
+    background-color: #eee!important;
+}
+.field-richeditor[readonly] .fr-element {
+    color: #999!important;
+}
+
 .video-help {
     background-color: aliceblue;
     color: #3366ff;
@@ -32,7 +39,7 @@ p.help-block:empty {
     cursor: not-allowed!important;
 }
 
-/* We are embedding other plugin callouts in our styled hints 
+/* We are embedding other plugin callouts in our styled hints
  * Maybe ours should have layout-rows as well although they take up +15px space
  */
 .form-group > .callout,
@@ -45,8 +52,8 @@ p.help-block:empty {
     padding: 0px;
 }
 .callout > .content > .layout-row {
-    /* Hint containers are styled above, 
-     * with managed hints, we bring the inner hint out 
+    /* Hint containers are styled above,
+     * with managed hints, we bring the inner hint out
      */
     margin: -2px;
 }
@@ -72,7 +79,7 @@ p.help-block:empty {
     height: 100%;
     line-height: 60px;
     padding: 0px 8px;
-    
+
     background-color: #333;
     color: #fff;
     font-weight: bold;
@@ -238,7 +245,7 @@ body.advanced .modal-body .control-simplelist li:has(.checkbox > input[name=visi
 .form-sidebar table.table.data thead > tr > th > a,
 .form-sidebar .list-scrollable-container.scroll-before::before,
 .form-sidebar .list-scrollable-container.scroll-after::after {
-    padding: 4px;    
+    padding: 4px;
     height: 24px;
 }
 .form-sidebar .btn.btn-sm {
@@ -584,7 +591,7 @@ table.table.data tbody tr.rowlink td ul.action-functions > li:hover > a {
     border: 1px solid #000;
 }
 
-/* ------------------------------------- Content only hints 
+/* ------------------------------------- Content only hints
  * Copied from backend.css
  * adjusted for .content
  */
@@ -813,7 +820,7 @@ h1.collapsable::before {
 
 /* ------------------------------- fixes */
 .is-rtl button.pika-prev, button.pika-next {
-    /* Not sure why Storm button is overriding this */ 
+    /* Not sure why Storm button is overriding this */
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAeCAYAAAAsEj5rAAAAU0lEQVR42u3VOwoAMAgE0dwfAnNjU26bYkBCFGwfiL9VVWoO+BJ4Gf3gtsEKKoFBNTCoCAYVwaAiGNQGMUHMkjGbgjk2mIONuXo0nC8XnCf1JXgArVIZAQh5TKYAAAAASUVORK5CYII=);
 }
 .is-rtl button.pika-next, button.pika-prev {
@@ -857,7 +864,7 @@ body .field-multilingual .ml-btn {
 }
 
 /* ------------------------------- LinuxPermissions
- * permissions-field 
+ * permissions-field
  * Also appears in columns.yaml
  */
 .permissions-field .permissions-number {
@@ -870,7 +877,7 @@ body .field-multilingual .ml-btn {
     vertical-align: middle;
 }
 /* High specificity to override the table.table.data directive */
-body div.permissions-field > table.permissions-table > tbody > tr > td, 
+body div.permissions-field > table.permissions-table > tbody > tr > td,
 body div.permissions-field > table.permissions-table > tbody > tr > th {
     color:#000;
     white-space: nowrap;
@@ -947,7 +954,7 @@ tr.rowlink .permissions-field input:checked {
 
     font-size: 10px;
     border-radius: 10px;
-    background-color: #3f559e;   
+    background-color: #3f559e;
     color: #fff;
     padding: 1px 4px;
 }

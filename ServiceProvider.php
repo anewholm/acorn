@@ -55,7 +55,7 @@ class ServiceProvider extends ModuleServiceProvider
         }
         Event::listen('backend.page.beforeDisplay', function ($controller, $action, $params) {
             $controller->addCss('~/modules/acorn/assets/css/module.css');
-            $controller->addJs('~/modules/acorn/assets/js/acorn.js');
+            $controller->addJs('~/modules/acorn/assets/js/acornassociated.js');
             $controller->addJs('~/modules/acorn/assets/js/html5-qrcode.js');
             $controller->addJs('~/modules/acorn/assets/js/findbyqrcode.js');
             $controller->addJs('~/modules/acorn/assets/js/forms.js');
@@ -101,7 +101,7 @@ class ServiceProvider extends ModuleServiceProvider
             foreach ($pluginFlags as $plugin) {
                 if (property_exists($plugin, 'acorn_infrastructure') && $plugin->acorn_infrastructure) {
                     foreach ($mainMenuItems as $mainMenu) {
-                        if ($plugin->code == $mainMenu->owner) 
+                        if ($plugin->code == $mainMenu->owner)
                             $navigationManager->removeMainMenuItem($plugin->code, $mainMenu->code);
                     }
                 }
@@ -213,7 +213,7 @@ class ServiceProvider extends ModuleServiceProvider
 
         // VERSION: Winter 1.2.6: send also parameter ('acorn');
         // But does not seem to cause a problem if ommitted
-        parent::boot(); 
+        parent::boot();
 
         $this->registerBackendReportWidgets();
     }
