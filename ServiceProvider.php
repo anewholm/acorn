@@ -32,6 +32,8 @@ use Acorn\Console\SetConfig;
 use Acorn\Console\ConfigPlugin;
 use Acorn\Console\Seed;
 use Acorn\Console\GenerateSeed;
+use Acorn\Console\PermissionGrant;
+use Acorn\Console\PermissionRevoke;
 use Acorn\Scopes\GlobalChainScope;
 
 class ServiceProvider extends ModuleServiceProvider
@@ -269,7 +271,7 @@ class ServiceProvider extends ModuleServiceProvider
     {
         // When the Winter Translate plugin is absent, alias its behavior base class so that
         // Acorn\Behaviors\TranslatableModel (which extends it) can still be autoloaded.
-        if (!class_exists('Winter\Translate\Behaviors\TranslatableModel')) {
+        if (!class_exists('Winter\Translate\Behaviors\TranslatableModel', false)) {
             class_alias(\Winter\Storm\Extension\ExtensionBase::class, 'Winter\Translate\Behaviors\TranslatableModel');
         }
 
@@ -279,6 +281,8 @@ class ServiceProvider extends ModuleServiceProvider
         $this->registerConsoleCommand('acorn.config-plugin', ConfigPlugin::class);
         $this->registerConsoleCommand('acorn.seed', Seed::class);
         $this->registerConsoleCommand('acorn.generate-seed', GenerateSeed::class);
+        $this->registerConsoleCommand('acorn.permission-grant', PermissionGrant::class);
+        $this->registerConsoleCommand('acorn.permission-revoke', PermissionRevoke::class);
 
         // Settings placeholders
         SettingsManager::instance()->registerCallback(function ($manager) {
