@@ -34,6 +34,9 @@ use Acorn\Console\Seed;
 use Acorn\Console\GenerateSeed;
 use Acorn\Console\PermissionGrant;
 use Acorn\Console\PermissionRevoke;
+use Acorn\Console\CreateSystem\CommentShow;
+use Acorn\Console\CreateSystem\CommentSet;
+use Acorn\Console\CreateSystem\CommentExclude;
 use Acorn\Scopes\GlobalChainScope;
 
 class ServiceProvider extends ModuleServiceProvider
@@ -283,6 +286,9 @@ class ServiceProvider extends ModuleServiceProvider
         $this->registerConsoleCommand('acorn.generate-seed', GenerateSeed::class);
         $this->registerConsoleCommand('acorn.permission-grant', PermissionGrant::class);
         $this->registerConsoleCommand('acorn.permission-revoke', PermissionRevoke::class);
+        $this->registerConsoleCommand('acorn.cs.comment-show', CommentShow::class);
+        $this->registerConsoleCommand('acorn.cs.comment-set', CommentSet::class);
+        $this->registerConsoleCommand('acorn.cs.exclude', CommentExclude::class);
 
         // Settings placeholders
         SettingsManager::instance()->registerCallback(function ($manager) {
