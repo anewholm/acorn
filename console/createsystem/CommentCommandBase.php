@@ -15,6 +15,10 @@ use Exception;
  *   1. {table} -- a table name, optionally with * wildcards (translated to
  *      SQL LIKE %). Always scoped to domain_data.fifteen_commerce_pa_* and
  *      public.fifteen_* tables (the only ones these commands are meant for).
+ *      If {table} matches no table AND --column is omitted, it's checked
+ *      against schema names (exact match, no wildcard) as a fallback -- so
+ *      `comment-set domain_data schema-editable=true` sets a SCHEMA-level
+ *      comment instead of erroring.
  *   2. --column=<name> (also wildcard-capable) -- narrows to one or more
  *      columns on each matched table. Omit for a table-level comment.
  *      Combine with --fk to target that column's FK CONSTRAINT instead of
@@ -43,7 +47,17 @@ abstract class CommentCommandBase extends Command
         );
 
         if (empty($tables)) {
-            throw new Exception("No table matches [{$tablePattern}].");
+            if ($columnPattern === null) {
+                $schemaExists = DB::selectOne(
+                    "SELECT nspname FROM pg_namespace WHERE nspname = ?",
+                    [$tablePattern]
+                );
+                if ($schemaExists) {
+                    $this->info("[{$tablePattern}] is a schema, not a table -- targeting it at the schema level.");
+                    return [['type' => 'schema', 'schema' => $tablePattern]];
+                }
+            }
+            throw new Exception("No table matches [{$tablePattern}], and it isn't a schema name either.");
         }
 
         $targets = [];
@@ -138,6 +152,7 @@ abstract class CommentCommandBase extends Command
     protected function describeTarget(array $t): string
     {
         return match ($t['type']) {
+            'schema' => "{$t['schema']} (schema)",
             'table' => "{$t['schema']}.{$t['table']} (table)",
             'column' => "{$t['schema']}.{$t['table']}.{$t['column']} (column)",
             'constraint' => "{$t['constraint']} on {$t['schema']}.{$t['table']} (FK constraint, column {$t['column']})",
@@ -147,6 +162,10 @@ abstract class CommentCommandBase extends Command
     protected function getExistingComment(array $target): ?string
     {
         return match ($target['type']) {
+            'schema' => DB::selectOne(
+                "SELECT obj_description(oid, 'pg_namespace') AS c FROM pg_namespace WHERE nspname = ?",
+                [$target['schema']]
+            )->c ?? null,
             'table' => DB::selectOne(
                 "SELECT obj_description(?::regclass) AS c",
                 ["{$target['schema']}.{$target['table']}"]
@@ -206,6 +225,7 @@ abstract class CommentCommandBase extends Command
     {
         $escaped = str_replace("'", "''", $comment);
         $sql = match ($target['type']) {
+            'schema' => "COMMENT ON SCHEMA {$target['schema']} IS '{$escaped}'",
             'table' => "COMMENT ON TABLE {$target['schema']}.{$target['table']} IS '{$escaped}'",
             'column' => "COMMENT ON COLUMN {$target['schema']}.{$target['table']}.{$target['column']} IS '{$escaped}'",
             'constraint' => "COMMENT ON CONSTRAINT {$target['constraint']} ON {$target['schema']}.{$target['table']} IS '{$escaped}'",
