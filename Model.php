@@ -1,5 +1,6 @@
 <?php namespace Acorn;
 
+use System\Tests\Plugins\Database\NullableModelTest;
 use Winter\Storm\Database\Model as BaseModel;
 use Winter\Storm\Database\Pivot;
 use Winter\Storm\Support\Facades\Schema;
@@ -516,6 +517,30 @@ class Model extends BaseModel
             }
         }
         return $chain;
+    }
+
+    public function parentBaseModel(): Model|NULL
+    {
+        $parentBaseModel = NULL;
+        if (property_exists($this, 'belongsTo')) {
+            // Only type=1to1
+            $oneToOnes = [];
+            foreach ($this->belongsTo as $relationName => $belongsTo) {
+                $type = $belongsTo['type'] ?? NULL;
+                if ($type == '1to1') array_push($oneToOnes, $relationName);
+            }
+            switch (count($oneToOnes)) {
+                case 0:
+                    break;
+                case 1:
+                    $relationName = $oneToOnes[0];
+                    $parentBaseModel = $this->$relationName;
+                    break;
+                default:
+                    throw new Exception("Multiple 1to1 belongTo parents");
+            }
+        }
+        return $parentBaseModel;
     }
 
     public function buildName(bool $html, string $delimeter, ...$nameModels): string

@@ -5,7 +5,6 @@ namespace Acorn\Console;
 use Backend\Facades\BackendAuth;
 use Backend\Models\User;
 use Backend\Models\UserRole;
-use Winter\Storm\Console\Command;
 use Winter\Storm\Support\Str;
 use Exception;
 

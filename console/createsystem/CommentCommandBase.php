@@ -3,9 +3,8 @@
 namespace Acorn\Console\CreateSystem;
 
 use DB;
-use Winter\Storm\Console\Command;
-use Winter\Storm\Support\Facades\Yaml as YamlParser;
-use Symfony\Component\Yaml\Yaml as YamlDumper;
+use Acorn\Comment;
+use Acorn\Console\Command;
 use Exception;
 
 /**
@@ -161,26 +160,7 @@ abstract class CommentCommandBase extends Command
 
     protected function getExistingComment(array $target): ?string
     {
-        return match ($target['type']) {
-            'schema' => DB::selectOne(
-                "SELECT obj_description(oid, 'pg_namespace') AS c FROM pg_namespace WHERE nspname = ?",
-                [$target['schema']]
-            )->c ?? null,
-            'table' => DB::selectOne(
-                "SELECT obj_description(?::regclass) AS c",
-                ["{$target['schema']}.{$target['table']}"]
-            )->c ?? null,
-            'column' => DB::selectOne(
-                "SELECT col_description(?::regclass, ordinal_position) AS c
-                 FROM information_schema.columns
-                 WHERE table_schema = ? AND table_name = ? AND column_name = ?",
-                ["{$target['schema']}.{$target['table']}", $target['schema'], $target['table'], $target['column']]
-            )->c ?? null,
-            'constraint' => DB::selectOne(
-                "SELECT obj_description(oid, 'pg_constraint') AS c FROM pg_constraint WHERE conname = ?",
-                [$target['constraint']]
-            )->c ?? null,
-        };
+        return Comment::read($target);
     }
 
     /**
@@ -191,46 +171,12 @@ abstract class CommentCommandBase extends Command
      */
     protected function mergeComment(?string $existing, array $newKeys): string
     {
-        $data = $existing ? (YamlParser::parse($existing) ?: []) : [];
-        if (!is_array($data)) {
-            throw new Exception("Existing comment isn't a YAML map, refusing to merge blindly:\n{$existing}");
-        }
-
-        foreach ($newKeys as $key => $value) {
-            $data = $this->setDotted($data, $key, $value);
-        }
-
-        return rtrim(YamlDumper::dump($data, 4, 2));
-    }
-
-    /** Supports dot-path keys, e.g. has-many-deep-settings.<relation>.field-exclude */
-    protected function setDotted(array $data, string $dotKey, $value): array
-    {
-        $parts = explode('.', $dotKey);
-        $cursor = &$data;
-        foreach ($parts as $i => $part) {
-            if ($i === count($parts) - 1) {
-                $cursor[$part] = $value;
-            } else {
-                if (!isset($cursor[$part]) || !is_array($cursor[$part])) {
-                    $cursor[$part] = [];
-                }
-                $cursor = &$cursor[$part];
-            }
-        }
-        return $data;
+        return Comment::merge($existing, $newKeys);
     }
 
     protected function applyComment(array $target, string $comment): void
     {
-        $escaped = str_replace("'", "''", $comment);
-        $sql = match ($target['type']) {
-            'schema' => "COMMENT ON SCHEMA {$target['schema']} IS '{$escaped}'",
-            'table' => "COMMENT ON TABLE {$target['schema']}.{$target['table']} IS '{$escaped}'",
-            'column' => "COMMENT ON COLUMN {$target['schema']}.{$target['table']}.{$target['column']} IS '{$escaped}'",
-            'constraint' => "COMMENT ON CONSTRAINT {$target['constraint']} ON {$target['schema']}.{$target['table']} IS '{$escaped}'",
-        };
-        DB::statement($sql);
+        Comment::apply($target, $comment);
     }
 
     /**

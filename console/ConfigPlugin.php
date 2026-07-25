@@ -2,7 +2,6 @@
 
 namespace Acorn\Console;
 
-use Winter\Storm\Console\Command;
 use System\Models\PluginVersion;
 use System\Classes\PluginManager;
 

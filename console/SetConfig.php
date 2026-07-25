@@ -3,7 +3,6 @@
 namespace Acorn\Console;
 
 use Config;
-use Winter\Storm\Console\Command;
 use Winter\Storm\Config\ConfigWriter;
 
 class SetConfig extends Command

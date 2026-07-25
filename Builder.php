@@ -4,7 +4,7 @@ use Model;
 
 use Illuminate\Support\Str;
 // Illuminate\Database\Eloquent\Builder
-use Winter\Storm\Database\Builder as BaseBuilder; 
+use Winter\Storm\Database\Builder as BaseBuilder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -33,11 +33,17 @@ class Builder extends BaseBuilder
         return $this;
     }
 
-    public function join($relationNames, ...$args) 
+    public function joinOneToOnes(...$args)
+    {
+        $oneToOneChain = \Acorn\Model::oneToOneChainFor($this->model);
+        return $this->join($oneToOneChain, ...$args);
+    }
+
+    public function join($relationNames, ...$args)
     {
         if (!$args) {
             // This will add the _joins_ for all the $relationNames to this main query
-            // Nested relation join request 
+            // Nested relation join request
             //   e.g. academic_year_semester.semester|event.first_event_part
             //
             // Pre-get: this model is dry
@@ -88,7 +94,7 @@ class Builder extends BaseBuilder
                     $fqTableTo    = "$relatedTable.$columnTo";
                     parent::join($relatedTable, $fqTableFrom, '=', $fqTableTo);
                 }
-                
+
                 // Take last related model in this section
                 $model = $relatedModel;
             }
@@ -101,11 +107,11 @@ class Builder extends BaseBuilder
 
     /**
      * Add a "belongs to one|many" relationship(s) where clause to the query.
-     * 
+     *
      * @param  Array of \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection<\Illuminate\Database\Eloquent\Model>  $related
      * @param  string|null  $relationshipName
      * @param  string  $boolean or|and
-     * @param  bool    $not 
+     * @param  bool    $not
      * @return Builder
      *
      * @throws \Illuminate\Database\Eloquent\RelationNotFoundException
@@ -123,7 +129,7 @@ class Builder extends BaseBuilder
                 $relatedCollection = $related;
                 $related = $relatedCollection->first();
             }
-    
+
             if ($relatedCollection->isEmpty()) {
                 if ($throwOnEmpty)
                     throw new InvalidArgumentException('Collection given to whereBelongsToMany method may not be empty.');
@@ -135,7 +141,7 @@ class Builder extends BaseBuilder
                     $query->whereBelongsToMany($related, NULL, $boolean, $throwOnEmpty);
                 else
                     $query->whereBelongsTo($related, NULL, $boolean);
-                if (!$first) $this->union($query); 
+                if (!$first) $this->union($query);
 
                 $first = FALSE;
             }
@@ -158,7 +164,7 @@ class Builder extends BaseBuilder
             try {
                 $relationship = $model->{$relationshipNameSingle}();
             } catch (BadMethodCallException $exception) {
-                if ($throwOnUnknown) 
+                if ($throwOnUnknown)
                     throw RelationNotFoundException::make($model, "$relationshipNameSingle|$relationshipNamePlural");
             }
         }
@@ -173,9 +179,9 @@ class Builder extends BaseBuilder
             //   $related Model UserGroup
             //
             // class BelongsToMany extends Relation:
-            //   $table pivot table, 
+            //   $table pivot table,
             //     acorn_calendar_event_part_user_group
-            // 
+            //
             //   getQualifiedParentKeyName()
             //     acorn_calendar_event_parts.id
             //   getQualifiedForeignPivotKeyName()
@@ -270,7 +276,7 @@ class Builder extends BaseBuilder
                 $boolean
             );
         }
-        
+
         return $this;
-    }   
+    }
 }

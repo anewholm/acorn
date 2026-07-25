@@ -80,24 +80,24 @@ class HasManyDeep extends StaudenmeirHasManyDeep
     {
         // We save the last relation in the chain
         // this assumes that the rest of the chain already exists
-        // It will redirect to 
+        // It will redirect to
         //   $this->getLastRelation()->attach($model->id)?
         // in the case of X-X pivot situations
         $lastRelation = $this->getLastRelation();   // BelongsToMany
-        if (!$lastRelation->parent->exists) 
+        if (!$lastRelation->parent->exists)
             $this->setLastRelationParentFrom($model);
         $lastRelation->add($model, $sessionKey);
     }
-    
+
     public function remove(Model $model, $sessionKey = null): void
     {
         // We save the last relation in the chain
         // this assumes that the rest of the chain already exists
-        // It will redirect to 
+        // It will redirect to
         //   $this->getLastRelation()->detach($model->id)?
         // in the case of X-X pivot situations
         $lastRelation = $this->getLastRelation();   // BelongsToMany
-        if (!$lastRelation->parent->exists) 
+        if (!$lastRelation->parent->exists)
             $this->setLastRelationParentFrom($model);
         $lastRelation->remove($model, $sessionKey);
     }
@@ -170,4 +170,18 @@ class HasManyDeep extends StaudenmeirHasManyDeep
 
         return $value;
     }
+
+    /*
+    public function paginate($perPage = null, $currentPage = null, $columns = ['*'], $pageName = 'page')
+    {
+        // Winter Storm uses the above paginate signature
+        // but HasManyDeep (and Laravel) uses the old one below
+        // so here we translate
+        // IMPORTANT: However, because there is no array type hint
+        // here, or in shouldSelect(array $columns) which is not used here
+        // it accidentally flows through
+        // so no change necessary at the moment
+        return parent::paginate($perPage, $columns, $pageName, $currentPage);
+    }
+    */
 }
