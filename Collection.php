@@ -2,14 +2,14 @@
 
 namespace Acorn;
 
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Winter\Storm\Database\Collection as StormDatabaseCollection;
 use Winter\Storm\Html\Helper as HtmlHelper;
 
 /**
  * @package acorn\builder
  * @author sz
  */
-class Collection extends EloquentCollection
+class Collection extends StormDatabaseCollection
 {
     /**
      * Generate an associative array for a dropdown options.
@@ -24,7 +24,7 @@ class Collection extends EloquentCollection
         // Instead of:
         //   return $this->pluck($value, $key)->all();
         $lists = array();
-        
+
         // nameFrom: entity[user_group][name]
         $parts = HtmlHelper::nameToArray($value);
         $last  = array_pop($parts);
@@ -38,7 +38,7 @@ class Collection extends EloquentCollection
             if ($model->hasAttribute($last)) $value = $model->$last;
             // TODO: Contentious failover to the name property:
             else $value = $model->name;
-            
+
             $lists[$id] = $value;
         }
 

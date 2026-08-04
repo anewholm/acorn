@@ -39,7 +39,7 @@ class Builder extends BaseBuilder
         return $this->join($oneToOneChain, ...$args);
     }
 
-    public function join($relationNames, ...$args)
+    public function join(string|array $relationNames, ...$args)
     {
         if (!$args) {
             // This will add the _joins_ for all the $relationNames to this main query
@@ -86,6 +86,8 @@ class Builder extends BaseBuilder
                         parent::join($relatedTable, $fqTableFrom, '=', $fqTableTo);
                     }
 
+                    // TODO: With multiple joins across tables id fields are clashing
+                    // cross-polinating id fields from deeper joins
                     $reverse      = ($relation instanceof BelongsTo);
                     $key          = $relation->getForeignKeyName();
                     $columnFrom   = ($reverse ? $key : 'id');

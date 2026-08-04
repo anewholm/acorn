@@ -75,6 +75,7 @@ class Model extends BaseModel
     public function uniqueIds(): array { return []; } // Opt-in per model; default is DB GENERATED ALWAYS identity
     public const LE_DELETE_ON_NULL = 2; // Row deletes
     public const LE_FALSE_ON_NULL = 3;  // Useful for missing boolean checkbox values
+    public const DERIVED_ONLY = TRUE;
 
     public $printable = FALSE;
     public static $globalScope;
@@ -477,10 +478,34 @@ class Model extends BaseModel
         return $ordinal;
     }
 
-    public function baseModel(): Model
+    public function is_a(BaseModel|string $modelClass, bool $derivedOnly = FALSE): bool
     {
+        // If is_a or belongsTo
+        $is = FALSE;
+        if (!is_string($modelClass)) $modelClass = get_class($modelClass);
+
+        if (!$derivedOnly && is_a($this, $modelClass)) {
+            $is = TRUE;
+        } else {
+            $oneToOneChain = $this->oneToOneChain();
+            foreach ($oneToOneChain as $baseModel) {
+                $baseClass = get_class($baseModel);
+                if ($baseClass == $modelClass) {
+                    $is = TRUE;
+                    break;
+                }
+            }
+        }
+        return $is;
+    }
+
+    public function baseModel(): Model|null
+    {
+        // This can return NULL because the baseModel
+        // might not be attached
         $oneToOneChain = $this->oneToOneChain();
-        return ($oneToOneChain ? end($oneToOneChain) : $this);
+        $return = ($oneToOneChain ? end($oneToOneChain) : $this);
+        return $return;
     }
 
     public function oneToOneChain(): array
@@ -489,7 +514,10 @@ class Model extends BaseModel
         $model         = $this;
         $oneToOneChain = self::oneToOneChainFor($this);
         foreach ($oneToOneChain as $relationName) {
-            $model = $model->$relationName;
+            // If the last step is a un-hydrated-non-attached model
+            // then it can be an empty model
+            if ($model->$relationName) $model = $model->$relationName;
+            else $model->$relationName()->getRelated();
             $modelChain[$relationName] = $model;
         }
 
