@@ -106,7 +106,13 @@ Trait MorphConfig
                             // ----------------------------- Class-exists removal
                             // Auto-remove scopes whose modelClass plugin is not installed,
                             // and explicit class-exists: directives in the scope config.
-                            if (isset($filterConfig['modelClass']) && !class_exists($filterConfig['modelClass'], false)) {
+                            // Autoloading must stay enabled here (no `, false`) -- this is
+                            // meant to answer "does this class exist at all", but disabling
+                            // autoload makes it answer "has something else already loaded
+                            // this class by coincidence", which silently removes a perfectly
+                            // valid scope whenever nothing earlier in the request happened
+                            // to reference its modelClass first.
+                            if (isset($filterConfig['modelClass']) && !class_exists($filterConfig['modelClass'])) {
                                 unset($config->scopes[$name]);
                                 continue;
                             }

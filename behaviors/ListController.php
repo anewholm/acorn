@@ -13,7 +13,7 @@ class ListController extends BackendListController
     use \Acorn\Traits\MorphConfig;
 
     public $readOnly = FALSE;
-    
+
     public function __construct($controller)
     {
         parent::__construct($controller);
@@ -56,7 +56,7 @@ class ListController extends BackendListController
                 $thisValue   = $widget->getColumnValueRaw($record, $column);
                 $lastValue   = ($previousRecord ? $widget->getColumnValueRaw($previousRecord, $column) : NULL);
                 $isDuplicate = ($thisValue && $thisValue == $lastValue);
-                
+
                 $classes     = array('theme-cell');
                 array_push($classes, "column-$iColumn");
                 if ($isDuplicate) array_push($classes, 'duplicate');
@@ -69,7 +69,7 @@ class ListController extends BackendListController
                     array_push($classes, "column-$iGroupColumn-group-$iGroup");
                     if ($iGroup % 2) array_push($classes, "column-$iGroupColumn-group-odd");
                 }
-                
+
                 $lastColumnRecord = $record;
                 $iColumn++;
                 $classesString    = implode(' ', $classes);
@@ -87,10 +87,16 @@ class ListController extends BackendListController
             $widget->bindEvent('list.extendQuery', function (Builder $query) {
                 $query = $query->getQuery();
                 foreach (get() as $getName => $fieldValue) {
+                    /* TODO: Old system for query-string filtering
+                     * Superceeded by listFilterExtendScopes() below
                     if (substr($getName, 0, 7) == 'filter_') {
                         $fieldName = substr($getName, 7);
+                        // Note that, if this field is on a relation
+                        // then that relation will need to be present in the query
+                        // otherwise it will Exception
                         $query->where($fieldName, $fieldValue);
                     }
+        `            */
                     if (substr($getName, 0, 6) == 'order_') {
                         $fieldName = substr($getName, 6);
                         $direction = ($fieldValue == 'desc' ? 'desc' : 'asc');
@@ -101,13 +107,25 @@ class ListController extends BackendListController
         });
     }
 
+    public function listFilterExtendScopes($host)
+    {
+        foreach (get() as $getName => $fieldValue) {
+            if (substr($getName, 0, 7) == 'filter_') {
+                $fieldName = substr($getName, 7);
+                if (!is_null($fieldValue)) {
+                    $host->setScopeValue($fieldName, [$fieldValue => $fieldValue]);
+                }
+            }
+        }
+    }
+
     public function index()
     {
         parent::index();
 
         // Allow post-action re-setting of body class
         // as ListController::index() resets it
-        if (method_exists($this->controller, 'bodyClassAdjust')) 
+        if (method_exists($this->controller, 'bodyClassAdjust'))
             $this->controller->bodyClassAdjust();
     }
 }
