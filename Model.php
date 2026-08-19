@@ -534,7 +534,8 @@ class Model extends BaseModel
             $oneToOnes = [];
             foreach ($model->belongsTo as $relationName => $belongsTo) {
                 $type = $belongsTo['type'] ?? NULL;
-                if ($type == '1to1') array_push($oneToOnes, $relationName);
+                if ($type == '1to1' || $type == 'Leaf')
+                    array_push($oneToOnes, $relationName);
             }
             if (count($oneToOnes) == 1) {
                 $relationName = $oneToOnes[0];
@@ -555,7 +556,8 @@ class Model extends BaseModel
             $oneToOnes = [];
             foreach ($this->belongsTo as $relationName => $belongsTo) {
                 $type = $belongsTo['type'] ?? NULL;
-                if ($type == '1to1') array_push($oneToOnes, $relationName);
+                if ($type == '1to1' || $type == 'Leaf')
+                    array_push($oneToOnes, $relationName);
             }
             switch (count($oneToOnes)) {
                 case 0:
