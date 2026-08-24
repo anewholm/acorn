@@ -76,6 +76,7 @@ class Model extends BaseModel
     public const LE_DELETE_ON_NULL = 2; // Row deletes
     public const LE_FALSE_ON_NULL = 3;  // Useful for missing boolean checkbox values
     public const DERIVED_ONLY = TRUE;
+    public const IGNORE_RELATION = '__NOT_INCLUDED__';
 
     public $printable = FALSE;
     public static $globalScope;
@@ -478,6 +479,68 @@ class Model extends BaseModel
         return $ordinal;
     }
 
+    /**
+     * Parses a native Postgres array-literal string (e.g. "{1,2,3}" or
+     * '{"a,b","c"}') into a plain PHP array. Used by generated pgArray
+     * accessors (create-system) for genuine integer[]/text[]/etc. columns
+     * -- NOT the same as a jsonable/json column: Eloquent's own array
+     * cast expects JSON ([1,2,3]), which Postgres rejects as input for a
+     * real array-typed column (it wants {1,2,3}). Already an array (e.g.
+     * the PDO driver hydrated it directly) => returned unchanged.
+     */
+    protected function parsePgArray(mixed $value): array
+    {
+        if (is_array($value)) return $value;
+        $value = (string) $value;
+        if ($value === '' || $value === '{}') return [];
+        $inner    = substr($value, 1, -1);
+        $items    = [];
+        $current  = '';
+        $inQuotes = FALSE;
+        $len      = strlen($inner);
+        for ($i = 0; $i < $len; $i++) {
+            $char = $inner[$i];
+            if ($inQuotes) {
+                if ($char === '\\' && $i + 1 < $len) {
+                    $current .= $inner[++$i];
+                } elseif ($char === '"') {
+                    $inQuotes = FALSE;
+                } else {
+                    $current .= $char;
+                }
+            } else {
+                if ($char === '"') {
+                    $inQuotes = TRUE;
+                } elseif ($char === ',') {
+                    $items[] = ($current === 'NULL' ? NULL : $current);
+                    $current = '';
+                } else {
+                    $current .= $char;
+                }
+            }
+        }
+        $items[] = ($current === 'NULL' ? NULL : $current);
+        return $items;
+    }
+
+    /**
+     * Inverse of parsePgArray() -- formats a plain PHP array back into
+     * Postgres's native array-literal syntax for saving into a real
+     * integer[]/text[]/etc. column. $numeric skips quoting (and NULL-safe
+     * casts each element through (int|float)) for numeric element types;
+     * otherwise each element is double-quote-escaped as a string.
+     */
+    protected function formatPgArray(?array $values, bool $numeric): string
+    {
+        $items = array_map(function ($item) use ($numeric) {
+            if ($item === NULL) return 'NULL';
+            if ($numeric) return (string) ($item + 0);
+            $escaped = str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $item);
+            return '"' . $escaped . '"';
+        }, $values ?? []);
+        return '{' . implode(',', $items) . '}';
+    }
+
     public function is_a(BaseModel|string $modelClass, bool $derivedOnly = FALSE): bool
     {
         // If is_a or belongsTo
@@ -516,8 +579,7 @@ class Model extends BaseModel
         foreach ($oneToOneChain as $relationName) {
             // If the last step is a un-hydrated-non-attached model
             // then it can be an empty model
-            if ($model->$relationName) $model = $model->$relationName;
-            else $model->$relationName()->getRelated();
+            $model = ($model->$relationName ?: $model->$relationName()->getRelated());
             $modelChain[$relationName] = $model;
         }
 
@@ -571,6 +633,33 @@ class Model extends BaseModel
             }
         }
         return $parentBaseModel;
+    }
+
+    public function findRelationNameFor(Model|string $target, array $relationTypes = ['hasOne']): string|NULL
+    {
+        // Reverse of parentBaseModel()'s own belongsTo walk: given a
+        // related model (or its class), find which of $this's own
+        // relations (of the given relation-array types, e.g.
+        // hasOne/hasOneThrough) would resolve to it (matched by class).
+        // Needed because Eloquent relations are one-way accessor caches --
+        // assigning the belongsTo side (e.g. $customer->domain_data = $dd)
+        // only populates $customer's own cache, never $dd's reverse side,
+        // and it can't be resolved by a fresh query either while $dd has
+        // no id yet. See saveBelongsToChain()'s own use of this.
+        $foundName   = NULL;
+        $targetClass = (is_string($target) ? $target : get_class($target));
+        $relations   = [];
+        foreach ($relationTypes as $relationType) {
+            if (property_exists($this, $relationType))
+                $relations = array_merge($relations, $this->$relationType ?? []);
+        }
+        foreach ($relations as $name => $definition) {
+            if (is_array($definition) && ($definition[0] ?? NULL) == $targetClass) {
+                $foundName = $name;
+                break;
+            }
+        }
+        return $foundName;
     }
 
     public function buildName(bool $html, string $delimeter, ...$nameModels): string
@@ -980,6 +1069,50 @@ class Model extends BaseModel
     public function newCollection(array $models = [])
     {
         return new Collection($models);
+    }
+
+    public static function selectFQId(array $extraColumns = []): Builder
+    {
+        // When there are many joins in a query
+        // like joinOneToOnes()
+        // there are many id columns if * columns are requested
+        // and the last id in the * list will take precedence, not the first
+        // This selectFQId() will make the first the main id
+        // and enforce namespacing of the others by table name
+        // if extraColumns are requested
+        $model     = new static();
+        $thisTable = $model->table;
+        $columns   = $extraColumns;
+        array_unshift($columns, "$thisTable.id");
+
+        foreach ($columns as &$column) {
+            $aliasParts  = explode(' as ', $column);
+            $column      = $aliasParts[0];
+            $alias       = (isset($aliasParts[1]) ? $aliasParts[1] : NULL);
+            $columnParts = explode('.', $column);
+            $unqualifiedColumn = end($columnParts);
+            $columnTable = (isset($columnParts[1]) ? $columnParts[0] : NULL);
+
+            // ID Conflict check
+            if ($unqualifiedColumn == 'id'
+                && !$alias
+                && $columnTable !== $thisTable
+            ) {
+                if (!$columnTable)
+                    throw new Exception("Conflicting id columns in request");
+                $alias = "{$columnTable}_id";
+            }
+
+            // Assemble
+            if (!$columnTable) {
+                $column = "$thisTable.$column";
+            }
+            if ($alias) $column .= " as $alias";
+        }
+
+        // Winter __callStatic re-routes this
+        // So it actually returns a Builder
+        return self::select($columns);
     }
 
     public static function whereBelongsToAny(Array $relatedArray, ?string $boolean = 'or', ?bool $throwOnEmpty = FALSE): Builder
@@ -1709,5 +1842,124 @@ SQL;
             }
 
         } // ($is_update || $is_create)
+    }
+
+    public function compareAttributesTo(Model $otherModel, array|NULL $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $dotPath = []): array
+    {
+        // Direct basic attribute comparison
+        $fieldsDiff = [];
+
+        foreach ($this->attributes as $key => $value) {
+            $isRelationship = (substr($key, -3) == '_id');
+            if (!in_array($key, ['id', 'created_at', 'updated_at'])
+                && !$isRelationship
+            ) {
+                // Important to retrieve the raw value in the same way
+                // as Laravel may apply filters
+                $thisAttribute  = $this->$key;
+                $otherAttribute = $otherModel->$key;
+                if ($otherAttribute != $thisAttribute) {
+                    $attributeDotPath  = $dotPath;
+                    array_push($attributeDotPath, $key);
+                    array_push($fieldsDiff, $attributeDotPath);
+                }
+            }
+        }
+
+        return $fieldsDiff;
+    }
+
+    public function compareFullOneToOneChainTo(Model $otherModel, array|NULL $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $classesToIgnore = [User::class, Server::class], string $baseCodeField = NULL, bool $enforceCollectionOrder = FALSE, array $dotPath = NULL): array
+    {
+        // We traverse up the belongsTo 1-1/leaf tree
+        // comparing only $this and the first level of relations
+        // Default dotPath for Customer is [customer]
+        $thisBaseModel   = $this->baseModel();
+        $otherBaseModel  = $otherModel->baseModel();
+        $otherFQClass    = get_class($otherModel);
+
+        // Default dotPath
+        $thisFQClass     = get_class($this);
+        $modelClassParts = explode('\\', $thisFQClass);
+        $modelClass      = end($modelClassParts);
+        if (is_null($dotPath)) $dotPath = [strtolower($modelClass)];
+
+        // Checks
+        if ($thisFQClass != $otherFQClass)
+            throw new Exception("Tried to compare 2 different classes: $thisFQClass != $otherFQClass");
+        if ($this->id && $otherModel->id && $this->id != $otherModel->id)
+            throw new Exception("ID mismatch: $this->id != $otherModel->id");
+        if ($baseCodeField) {
+            $code = $thisBaseModel->$baseCodeField;
+            if ($code != $otherBaseModel->$baseCodeField)
+                throw new Exception("findByBaseCode($baseCodeField) $code mismatch");
+        }
+
+        // Attributes comparison
+        $fieldsDiff = $this->compareAttributesTo($otherModel, $fieldsToIgnore, $dotPath);
+
+        // Relations Comparison
+        $relations = array_merge($this->belongsTo, $this->hasMany);
+        foreach ($relations as $relationName => $relationDetails) {
+            $relatedClass     = $relationDetails[0];
+            $otherRelated     = $otherModel->$relationName;
+            $thisRelated      = $this->$relationName;
+            $type             = $relationDetails['type'] ?? NULL;
+            $is1to1           = ($type == '1to1' || $type == 'Leaf');
+            $relationDotPath  = $dotPath;
+            array_push($relationDotPath, $relationName);
+
+            if (!in_array($relatedClass, $classesToIgnore)) {
+                // Sometimes partial Model implementations do not include
+                // all their related info
+                // Signal this by setting the relation manually to the IGNORE_RELATION string
+                if ($thisRelated && $otherRelated && $thisRelated != self::IGNORE_RELATION) {
+                    // General branch single level relations checks
+                    // hasMany will return a Collection
+                    if ($thisRelated instanceof Collection) {
+                        if ($thisRelated->count() == $otherRelated->count()) {
+                            foreach ($thisRelated as $key => $thisRelatedModel) {
+                                if ($thisRelatedModel instanceof self) {
+                                    if ($enforceCollectionOrder) $otherRelatedModel = $otherRelated[$key];
+                                    else $otherRelatedModel = $otherRelated->firstWhere('id', $thisRelatedModel->id);
+                                    if ($otherRelatedModel) {
+                                        $fieldsDiff = array_merge($fieldsDiff,
+                                            $thisRelatedModel->compareAttributesTo($otherRelatedModel, $fieldsToIgnore, $relationDotPath)
+                                        );
+                                    } else {
+                                        $relationDotPathEntry = $relationDotPath;
+                                        array_push($relationDotPathEntry, "$key.$thisRelatedModel->id");
+                                        array_push($fieldsDiff, $relationDotPathEntry);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Counts different
+                            $relationDotPathEntry = $relationDotPath;
+                            array_push($relationDotPathEntry, "count()");
+                            array_push($fieldsDiff, $relationDotPathEntry);
+                        }
+                    }
+                    // Travel up the tree and compare all relations again
+                    else if ($thisRelated instanceof self && $is1to1) {
+                        $fieldsDiff = array_merge($fieldsDiff,
+                            $thisRelated->compareFullOneToOneChainTo($otherRelated, $fieldsToIgnore, $classesToIgnore, $baseCodeField, $enforceCollectionOrder, $relationDotPath)
+                        );
+                    }
+                    // Single model
+                    else if ($thisRelated instanceof self) {
+                        $fieldsDiff = array_merge($fieldsDiff,
+                            $thisRelated->compareAttributesTo($otherRelated, $fieldsToIgnore, $relationDotPath)
+                        );
+                    }
+                }
+                // 1 or both are NULL
+                else if ($thisRelated || $otherRelated) {
+                    array_push($fieldsDiff, $relationDotPath);
+                }
+            }
+        }
+
+        return $fieldsDiff;
     }
 }

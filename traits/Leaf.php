@@ -95,11 +95,18 @@ trait Leaf
     public function getLeafHasOnesModel(bool $withoutGlobalScopes = FALSE): Model|NULL
     {
         $leafObject = NULL;
-        // Check each $hasOne leaf relation 1 by 1 for an object
-        // There may be very many!
+        $thisClass  = get_class($this);
+
+        // Check each $hasOne relation for a reverse <-belongsTo leafs
+        // PREFORMANCE: There may be very many!
         $relations  = array_merge($this->hasOneThrough, $this->hasOne);
         foreach ($relations as $name => $definition) {
-            if (is_array($definition) && isset($definition['leaf']) && $definition['leaf']) {
+            if (!is_array($definition)) continue;
+
+            // $hasOne 1from1 can be marked as leaf for performance
+            $type = $definition['type'] ?? NULL;
+            $leaf = $definition['leaf'] ?? NULL;
+            if ($type == '1from1' && $leaf) {
                 $leafObject = ($withoutGlobalScopes
                     ? $this->$name()->withoutGlobalScopes()->first()
                     : $this->$name
@@ -107,16 +114,18 @@ trait Leaf
                 if ($leafObject) break;
             }
 
-            // Need to check the reverse belongsTo relation(s),
-            // because that will be the leaf relation
+            // Need to check the reverse <-belongsTo relation(s),
+            // for a leaf to $this
+            // TODO: Oustanding TODO in CS for 'leaf' => TRUE
             if (isset($definition[0])) {
                 $relationTo = new $definition[0];
                 if ($relationTo->belongsTo) {
                     foreach ($relationTo->belongsTo as $backName => $backDefinition) {
-                        if (isset($backDefinition[0])
-                            && $backDefinition[0] == get_class($this)
-                            && isset($backDefinition['leaf'])
-                            && $backDefinition['leaf']
+                        $backClass = $backDefinition[0]      ?? NULL;
+                        $type      = $backDefinition['type'] ?? NULL;
+                        $leaf      = $backDefinition['leaf'] ?? FALSE;
+                        if ($backClass == $thisClass
+                            && ($leaf || $type == 'Leaf')
                         ) {
                             $leafObject = ($withoutGlobalScopes
                                 ? $this->$name()->withoutGlobalScopes()->first()
@@ -166,5 +175,11 @@ trait Leaf
         }
 
         return $leafObject;
+    }
+
+    public function isLeafModel(?bool $throwIfNull = FALSE, bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): bool
+    {
+        // isLeaf() is implemented on NestedTree
+        return is_null($this->getLeafTypeModel($throwIfNull, $withoutGlobalScopes, $recursive));
     }
 }

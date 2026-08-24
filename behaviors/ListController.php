@@ -84,6 +84,34 @@ class ListController extends BackendListController
                 $widget->showSetup   = false;
             }
 
+            // Our *Model* Trait Acorn\Traits\PagedNestedTree needs access to the
+            // Backend\Lists widget's own config (recordsPerPage/showPagination) to decide
+            // whether and how much to paginate -- scopeGetNested() runs on the
+            // model with no visibility into the widget that triggered it, so this
+            // bridges the value onto the model instance it will actually query
+            // against, and restores showPagination (Lists::validateTree() forces
+            // it off for every showTree list, tree or not, before this runs).
+            //
+            // This has to be a bound event, not inline here: Lists::extend()
+            // callbacks fire from WidgetBase::__construct() BEFORE init() ever
+            // runs (WidgetBase.php:74 vs :80), so showTree/recordsPerPage are
+            // still unset at this point. list.extendQueryBefore fires later,
+            // from prepareQuery() -- by then init()/validateTree() have already
+            // run, and $widget->model is the same instance $query gets built
+            // from moments later.
+            $widget->bindEvent('list.extendQueryBefore', function ($query) use ($widget) {
+                $model          = $widget->model;
+                $usesPagedTree  = $widget->showTree && $model && in_array(\Acorn\Traits\PagedNestedTree::class, class_uses_recursive($model));
+                $usesPagination = ($widget->getConfig('showPagination', true) !== false);
+                $pageSize       = $widget->recordsPerPage ?: 20;
+
+                if ($usesPagedTree && $usesPagination && $pageSize) {
+                    $model->recordsPerPage   = $pageSize;
+                    $widget->showPagination  = true;
+                    $widget->showPageNumbers = true;
+                }
+            });
+
             $widget->bindEvent('list.extendQuery', function (Builder $query) {
                 $query = $query->getQuery();
                 foreach (get() as $getName => $fieldValue) {
