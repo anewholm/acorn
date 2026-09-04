@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Cache;
 use \Winter\Storm\Argon\Argon;
 use \DateTime;
+use Illuminate\Support\Collection as SupportCollection;
 
 use Str;
 use BackendAuth;
@@ -447,6 +448,32 @@ class Model extends BaseModel
         }
 
         return $result;
+    }
+
+    public static function saveModels(array|SupportCollection $modelsToSave, array|null $options = [], $sessionKey = null): bool
+    {
+        $ret = FALSE;
+        try {
+            $ret = DB::transaction(function () use ($modelsToSave, $options, $sessionKey) {
+                $lastSave = FALSE;
+                foreach ($modelsToSave as &$model) {
+                    $lastSave = $model->save($options, $sessionKey);
+                }
+                return $lastSave;
+            });
+        } catch (Exception $ex) {
+            // A partial failure part-way through this chain (e.g. domain_data
+            // saves but customer/company doesn't) leaves an orphaned row that
+            // findByBaseCode()'s inner-joined search can never find again, so every
+            // retry re-collides on the same unique constraint. One transaction
+            // around the whole chain means a failure rolls back cleanly instead.
+            foreach ($modelsToSave as $model) {
+                $model->id = NULL;
+            }
+            throw $ex;
+        }
+
+        return $ret;
     }
 
     public static function nextNewModelId(): int
@@ -1861,6 +1888,8 @@ SQL;
                 if ($otherAttribute != $thisAttribute) {
                     $attributeDotPath  = $dotPath;
                     array_push($attributeDotPath, $key);
+                    if (!is_array($otherAttribute) && !is_array($thisAttribute))
+                        array_push($attributeDotPath, "(Attribute mismatch [$thisAttribute] != [$otherAttribute])");
                     array_push($fieldsDiff, $attributeDotPath);
                 }
             }
@@ -1869,7 +1898,7 @@ SQL;
         return $fieldsDiff;
     }
 
-    public function compareFullOneToOneChainTo(Model $otherModel, array|NULL $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $classesToIgnore = [User::class, Server::class], string $baseCodeField = NULL, bool $enforceCollectionOrder = FALSE, array $dotPath = NULL): array
+    public function compareFullOneToOneChainTo(Model $otherModel, array|NULL $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $classesToIgnore = [User::class, Server::class], bool $enforceCollectionOrder = FALSE, array $dotPath = NULL, Model $previousModel = NULL): array
     {
         // We traverse up the belongsTo 1-1/leaf tree
         // comparing only $this and the first level of relations
@@ -1889,17 +1918,12 @@ SQL;
             throw new Exception("Tried to compare 2 different classes: $thisFQClass != $otherFQClass");
         if ($this->id && $otherModel->id && $this->id != $otherModel->id)
             throw new Exception("ID mismatch: $this->id != $otherModel->id");
-        if ($baseCodeField) {
-            $code = $thisBaseModel->$baseCodeField;
-            if ($code != $otherBaseModel->$baseCodeField)
-                throw new Exception("findByBaseCode($baseCodeField) $code mismatch");
-        }
 
         // Attributes comparison
         $fieldsDiff = $this->compareAttributesTo($otherModel, $fieldsToIgnore, $dotPath);
 
         // Relations Comparison
-        $relations = array_merge($this->belongsTo, $this->hasMany);
+        $relations = array_merge($this->belongsTo, $this->hasMany, $this->hasOne);
         foreach ($relations as $relationName => $relationDetails) {
             $relatedClass     = $relationDetails[0];
             $otherRelated     = $otherModel->$relationName;
@@ -1919,7 +1943,9 @@ SQL;
                     if ($thisRelated instanceof Collection) {
                         if ($thisRelated->count() == $otherRelated->count()) {
                             foreach ($thisRelated as $key => $thisRelatedModel) {
-                                if ($thisRelatedModel instanceof self) {
+                                if ($thisRelatedModel instanceof self
+                                    && (!$previousModel || !$previousModel->is($thisRelatedModel))
+                                ) {
                                     if ($enforceCollectionOrder) $otherRelatedModel = $otherRelated[$key];
                                     else $otherRelatedModel = $otherRelated->firstWhere('id', $thisRelatedModel->id);
                                     if ($otherRelatedModel) {
@@ -1929,6 +1955,7 @@ SQL;
                                     } else {
                                         $relationDotPathEntry = $relationDotPath;
                                         array_push($relationDotPathEntry, "$key.$thisRelatedModel->id");
+                                        array_push($relationDotPathEntry, '(Missing DB relation)');
                                         array_push($fieldsDiff, $relationDotPathEntry);
                                     }
                                 }
@@ -1937,24 +1964,32 @@ SQL;
                             // Counts different
                             $relationDotPathEntry = $relationDotPath;
                             array_push($relationDotPathEntry, "count()");
+                            array_push($relationDotPathEntry, '(Different relation count())');
                             array_push($fieldsDiff, $relationDotPathEntry);
                         }
                     }
                     // Travel up the tree and compare all relations again
                     else if ($thisRelated instanceof self && $is1to1) {
-                        $fieldsDiff = array_merge($fieldsDiff,
-                            $thisRelated->compareFullOneToOneChainTo($otherRelated, $fieldsToIgnore, $classesToIgnore, $baseCodeField, $enforceCollectionOrder, $relationDotPath)
-                        );
+                        if (!$previousModel || !$previousModel->is($thisRelated))
+                            $fieldsDiff = array_merge($fieldsDiff,
+                                $thisRelated->compareFullOneToOneChainTo($otherRelated, $fieldsToIgnore, $classesToIgnore, $enforceCollectionOrder, $relationDotPath, $this)
+                            );
                     }
                     // Single model
                     else if ($thisRelated instanceof self) {
-                        $fieldsDiff = array_merge($fieldsDiff,
-                            $thisRelated->compareAttributesTo($otherRelated, $fieldsToIgnore, $relationDotPath)
-                        );
+                        if (!$previousModel || !$previousModel->is($thisRelated))
+                            $fieldsDiff = array_merge($fieldsDiff,
+                                $thisRelated->compareAttributesTo($otherRelated, $fieldsToIgnore, $relationDotPath)
+                            );
                     }
                 }
                 // 1 or both are NULL
-                else if ($thisRelated || $otherRelated) {
+                else if ($thisRelated) {
+                    array_push($relationDotPath, '(DB relation missing)');
+                    array_push($fieldsDiff, $relationDotPath);
+                }
+                else if ($otherRelated) {
+                    array_push($relationDotPath, '(This relation missing)');
                     array_push($fieldsDiff, $relationDotPath);
                 }
             }
