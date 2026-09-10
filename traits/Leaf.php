@@ -53,21 +53,21 @@ trait Leaf
         // acorn_university_schools => Schools => Acorn\University\Models\School
         $class = NULL;
         if (isset($this->attributes['leaf_table'])) {
-            $leafTable      = $this->attributes['leaf_table'];
-            $leafTableParts = explode('_', $leafTable);
-            array_shift($leafTableParts); // acorn
-            array_shift($leafTableParts); // university
-            $leafTableName = implode(' ', $leafTableParts); // schools
-            $class         = Str::singular($leafTableName);
-            $class         = Str::title($class);
+            $leafTable = $this->attributes['leaf_table'];
             if ($fqn) {
-                // Swap in last name for this FQN
-                $class        = str_replace(' ', '', $class);
-                $thisFQNParts = explode('\\', get_class($this));
-                array_pop($thisFQNParts);
-                array_push($thisFQNParts, $class);
-                $class  = implode('\\', $thisFQNParts);
+                // The leaf table name carries its own author & plugin, so the
+                // standard reverse lookup reaches leafs in other plugins:
+                // Fifteen\Relayorm\Models\DomainData's leaf_tables are all
+                // Fifteen\Commerce\Models\*, which $this's own namespace cannot
+                $class = self::fullyQualifiedModelClassFromTableName($leafTable);
                 if (!class_exists($class)) $class = NULL;
+            } else {
+                $leafTableParts = explode('_', $leafTable);
+                array_shift($leafTableParts); // acorn
+                array_shift($leafTableParts); // university
+                $leafTableName = implode(' ', $leafTableParts); // schools
+                $class         = Str::singular($leafTableName);
+                $class         = Str::title($class);
             }
         }
         return $class;
@@ -139,6 +139,12 @@ trait Leaf
             if ($leafObject) break;
         }
         return $leafObject;
+    }
+
+    public function getLeafTypeModelOrSelf(bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): Model
+    {
+        $leafObject = $this->getLeafTypeModel(FALSE, $withoutGlobalScopes, $recursive);
+        return ($leafObject ?: $this);
     }
 
     public function getLeafTypeModel(?bool $throwIfNull = FALSE, bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): Model|NULL

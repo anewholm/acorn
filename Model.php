@@ -87,6 +87,8 @@ class Model extends BaseModel
     public $readOnly = FALSE; // For VIEWS
     public $advanced = []; // Advanced fields
 
+    public $_fields_diff;
+
     // --------------------------------------------- Translation
     public $implement = ['Acorn.Behaviors.TranslatableModel'];
     public $implementReplaces = ['Winter.Translate.Behaviors.TranslatableModel'];
@@ -611,6 +613,31 @@ class Model extends BaseModel
         }
 
         return $modelChain;
+    }
+
+    public function unsetNullRelations(): void
+    {
+        // Drop every relation that resolved to NULL, so it re-resolves now
+        // that this model finally has its primary key.
+        //
+        // Anything cached while the key was still NULL was queried against
+        // that NULL and is meaningless. Relay's incoming upsert is where this
+        // bites: Adapter::newExternalDataIncoming() calls isLeafModel()
+        // BEFORE findByIdentifierForThisAdapter() hydrates the id, and
+        // Leaf::getLeafHasOnesModel() reads `$this->$name` on each candidate
+        // hasOne looking for the leaf -- so a Product reached compareToDB()
+        // with all ~100 of its pa_* relations cached as NULL, every one of
+        // which then compared NULL against a real DB row and reported a
+        // phantom '(This relation missing)'.
+        //
+        // NULL-valued ONLY: a relation something genuinely set (domain_data,
+        // customer, a DRI-created company_status) always holds a model
+        // object, so this cannot discard real data. Deliberately CLEARING a
+        // relation writes the foreign key ATTRIBUTE, not a NULL relation, so
+        // that still compares and still reports as a change.
+        foreach ($this->getRelations() as $relationName => $related) {
+            if (is_null($related)) $this->unsetRelation($relationName);
+        }
     }
 
     public static function oneToOneChainFor(string|Model $model): array
@@ -1878,8 +1905,19 @@ SQL;
 
         foreach ($this->attributes as $key => $value) {
             $isRelationship = (substr($key, -3) == '_id');
+            // Leading underscore is this codebase's pseudo-attribute
+            // convention -- never a real column, purged before the write
+            // (Backend\Traits\FormModelSaver::setModelAttributes()). Relay's
+            // incoming upsert hangs the whole AdapterDomainDataState object
+            // off the model as `_state`, which used to be compared like a
+            // column against a DB model that of course has no such thing:
+            // a guaranteed mismatch on EVERY record, so compareToDB() could
+            // never return "identical" and setDomainDataStateSkipped() was
+            // unreachable. All 60 stored WebItemsList diffs are this.
+            $isPseudo = (substr($key, 0, 1) == '_');
             if (!in_array($key, ['id', 'created_at', 'updated_at'])
                 && !$isRelationship
+                && !$isPseudo
             ) {
                 // Important to retrieve the raw value in the same way
                 // as Laravel may apply filters
@@ -1926,18 +1964,59 @@ SQL;
         $relations = array_merge($this->belongsTo, $this->hasMany, $this->hasOne);
         foreach ($relations as $relationName => $relationDetails) {
             $relatedClass     = $relationDetails[0];
-            $otherRelated     = $otherModel->$relationName;
-            $thisRelated      = $this->$relationName;
             $type             = $relationDetails['type'] ?? NULL;
             $is1to1           = ($type == '1to1' || $type == 'Leaf');
             $relationDotPath  = $dotPath;
             array_push($relationDotPath, $relationName);
 
             if (!in_array($relatedClass, $classesToIgnore)) {
-                // Sometimes partial Model implementations do not include
-                // all their related info
-                // Signal this by setting the relation manually to the IGNORE_RELATION string
-                if ($thisRelated && $otherRelated && $thisRelated != self::IGNORE_RELATION) {
+                // BOTH checks below have to happen BEFORE $this->$relationName
+                // is read: reading a relation lazy-loads it, which writes the
+                // name in to $this->relations (with NULL, on a partial model)
+                // and destroys the very signal being tested.
+
+                // Partial Model implementations -- an incoming
+                // upsert_attribute_mapping that maps only some columns, e.g.
+                // an inventory-only refresh -- legitimately say nothing about
+                // most relations. Only a belongsTo can be spuriously
+                // "missing": it resolves off a LOCAL foreign key attribute,
+                // which a partial mapping never sets, so it lazy-loaded NULL
+                // and was reported as '(This relation missing)' against a DB
+                // row that is perfectly correct. hasMany/hasOne resolve off
+                // this model's own primary key -- which hydrateIdsFrom() does
+                // set -- so both sides load the same rows and compare
+                // correctly whether the mapping mentioned them or not; their
+                // cost, not their correctness, is what IGNORE_RELATION below
+                // is for.
+                //
+                // Absent from BOTH attributes and relations means "this
+                // mapping never mentioned it". That is deliberately different
+                // from a mapping that sets it to NULL on purpose (e.g.
+                // `company_status: null`, clearing a status): that DOES write
+                // the foreign key attribute, so it stays compared and still
+                // reports as a real change.
+                if (isset($this->belongsTo[$relationName])) {
+                    $localKey  = $relationDetails['key'] ?? NULL;
+                    $mentioned = (array_key_exists($relationName, $this->relations)
+                        || ($localKey && array_key_exists($localKey, $this->attributes))
+                    );
+                    if (!$mentioned) continue;
+                }
+
+                // Explicit opt-out for a relation that IS mapped but should
+                // not be walked -- a large hasMany costs a full load of every
+                // row, on BOTH sides, to reach a foregone conclusion. Was
+                // checked as part of the compare condition below, which never
+                // worked: IGNORE_RELATION is a truthy string, so it failed
+                // that condition and fell straight through to the
+                // '(DB relation missing)' arm underneath, ADDING a diff
+                // instead of suppressing one. It needs to be a skip.
+                if (($this->relations[$relationName] ?? NULL) === self::IGNORE_RELATION) continue;
+
+                $otherRelated = $otherModel->$relationName;
+                $thisRelated  = $this->$relationName;
+
+                if ($thisRelated && $otherRelated) {
                     // General branch single level relations checks
                     // hasMany will return a Collection
                     if ($thisRelated instanceof Collection) {
@@ -1995,6 +2074,12 @@ SQL;
             }
         }
 
+        return $this->setFieldDiff($fieldsDiff);
+    }
+
+    protected function setFieldDiff(array $fieldsDiff): array
+    {
+        $this->_fields_diff = $fieldsDiff;
         return $fieldsDiff;
     }
 }

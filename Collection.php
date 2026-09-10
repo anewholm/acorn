@@ -11,6 +11,8 @@ use Winter\Storm\Html\Helper as HtmlHelper;
  */
 class Collection extends StormDatabaseCollection
 {
+    public const KEEP_NOT_LEAVES = TRUE;
+
     /**
      * Generate an associative array for a dropdown options.
      *
@@ -48,5 +50,22 @@ class Collection extends StormDatabaseCollection
     public function ids()
     {
         return $this->pluck('id')->toArray();
+    }
+
+    public function toLeafModels(bool $keepNotLeaves = self::KEEP_NOT_LEAVES, bool $withoutGlobalScopes = FALSE): static
+    {
+        $leafModels = new static();
+
+        foreach ($this as $model) {
+            $leafModel = $model;
+            // Only Acorn\Model has getLeafTypeModel()
+            if ($model instanceof Model) {
+                $leafModel = $model->getLeafTypeModel(FALSE, $withoutGlobalScopes);
+                if (!$leafModel && $keepNotLeaves) $leafModel = $model;
+            }
+            if ($leafModel) $leafModels->push($leafModel);
+        }
+
+        return $leafModels;
     }
 }
