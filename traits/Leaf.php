@@ -144,6 +144,7 @@ trait Leaf
     public function getLeafTypeModelOrSelf(bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): Model
     {
         $leafObject = $this->getLeafTypeModel(FALSE, $withoutGlobalScopes, $recursive);
+        if ($leafObject) $leafObject->_fields_diff = $this->_fields_diff;
         return ($leafObject ?: $this);
     }
 

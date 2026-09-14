@@ -87,7 +87,12 @@ class Model extends BaseModel
     public $readOnly = FALSE; // For VIEWS
     public $advanced = []; // Advanced fields
 
-    public $_fields_diff;
+    // It is the callers responsibility to decide if
+    // compareTo*() has run or not
+    // [] compared and equal
+    // [...] compared and different
+    // NULL: !->exists in DB or no compare run
+    public ?array $_fields_diff = NULL;
 
     // --------------------------------------------- Translation
     public $implement = ['Acorn.Behaviors.TranslatableModel'];
@@ -1905,15 +1910,6 @@ SQL;
 
         foreach ($this->attributes as $key => $value) {
             $isRelationship = (substr($key, -3) == '_id');
-            // Leading underscore is this codebase's pseudo-attribute
-            // convention -- never a real column, purged before the write
-            // (Backend\Traits\FormModelSaver::setModelAttributes()). Relay's
-            // incoming upsert hangs the whole AdapterDomainDataState object
-            // off the model as `_state`, which used to be compared like a
-            // column against a DB model that of course has no such thing:
-            // a guaranteed mismatch on EVERY record, so compareToDB() could
-            // never return "identical" and setDomainDataStateSkipped() was
-            // unreachable. All 60 stored WebItemsList diffs are this.
             $isPseudo = (substr($key, 0, 1) == '_');
             if (!in_array($key, ['id', 'created_at', 'updated_at'])
                 && !$isRelationship
@@ -1932,6 +1928,9 @@ SQL;
                 }
             }
         }
+
+        // Persist the Model property above
+        $this->_fields_diff = $fieldsDiff;
 
         return $fieldsDiff;
     }
@@ -1970,31 +1969,6 @@ SQL;
             array_push($relationDotPath, $relationName);
 
             if (!in_array($relatedClass, $classesToIgnore)) {
-                // BOTH checks below have to happen BEFORE $this->$relationName
-                // is read: reading a relation lazy-loads it, which writes the
-                // name in to $this->relations (with NULL, on a partial model)
-                // and destroys the very signal being tested.
-
-                // Partial Model implementations -- an incoming
-                // upsert_attribute_mapping that maps only some columns, e.g.
-                // an inventory-only refresh -- legitimately say nothing about
-                // most relations. Only a belongsTo can be spuriously
-                // "missing": it resolves off a LOCAL foreign key attribute,
-                // which a partial mapping never sets, so it lazy-loaded NULL
-                // and was reported as '(This relation missing)' against a DB
-                // row that is perfectly correct. hasMany/hasOne resolve off
-                // this model's own primary key -- which hydrateIdsFrom() does
-                // set -- so both sides load the same rows and compare
-                // correctly whether the mapping mentioned them or not; their
-                // cost, not their correctness, is what IGNORE_RELATION below
-                // is for.
-                //
-                // Absent from BOTH attributes and relations means "this
-                // mapping never mentioned it". That is deliberately different
-                // from a mapping that sets it to NULL on purpose (e.g.
-                // `company_status: null`, clearing a status): that DOES write
-                // the foreign key attribute, so it stays compared and still
-                // reports as a real change.
                 if (isset($this->belongsTo[$relationName])) {
                     $localKey  = $relationDetails['key'] ?? NULL;
                     $mentioned = (array_key_exists($relationName, $this->relations)
@@ -2003,14 +1977,6 @@ SQL;
                     if (!$mentioned) continue;
                 }
 
-                // Explicit opt-out for a relation that IS mapped but should
-                // not be walked -- a large hasMany costs a full load of every
-                // row, on BOTH sides, to reach a foregone conclusion. Was
-                // checked as part of the compare condition below, which never
-                // worked: IGNORE_RELATION is a truthy string, so it failed
-                // that condition and fell straight through to the
-                // '(DB relation missing)' arm underneath, ADDING a diff
-                // instead of suppressing one. It needs to be a skip.
                 if (($this->relations[$relationName] ?? NULL) === self::IGNORE_RELATION) continue;
 
                 $otherRelated = $otherModel->$relationName;
@@ -2074,12 +2040,131 @@ SQL;
             }
         }
 
-        return $this->setFieldDiff($fieldsDiff);
+        // Persist recursive the Model property above
+        $this->_fields_diff = $fieldsDiff;
+
+        return $fieldsDiff;
     }
 
-    protected function setFieldDiff(array $fieldsDiff): array
+    public function originalIsEquivalent($key)
     {
-        $this->_fields_diff = $fieldsDiff;
-        return $fieldsDiff;
+        // PostGreSQL hands numerics back as strings ('4322.0000'), so a mapped
+        // int 4322 under-merged onto that row reads as dirty: Eloquent falls
+        // through to strcmp() for any column without a declared cast
+        // compareAttributesTo() has always compared these loosely (!=), and the
+        // Save/Skip decision now rests on isDirty(), so every numeric column
+        // would otherwise re-fire on every single poll
+        $equivalent = parent::originalIsEquivalent($key);
+
+        if (!$equivalent && array_key_exists($key, $this->original)) {
+            $attribute = $this->attributes[$key] ?? NULL;
+            $original  = $this->original[$key];
+            if (is_numeric($attribute) && is_numeric($original))
+                $equivalent = ($attribute == $original);
+        }
+
+        return $equivalent;
+    }
+
+    public function underMergeDbModels(): Collection
+    {
+        // In-place, over the whole prepared graph: $this, its 1-1/Leaf chain,
+        // its hasMany members and single relations
+        // The returned Collection is every model considered, changed or not
+        // The callback acts on the model the walk HANDS it, never on $this:
+        // [$this, 'underMergeDbModel'] would silently drop that argument and
+        // under-merge $this once per model in the graph
+        $touched = $this->walkModelHierarchy(fn(Model $model) => $model->underMergeDbModel());
+        return $touched;
+    }
+
+    public function underMergeDbModel(): Model
+    {
+        // In-place
+        // Loads the Database model, if ->exists, underneath this unsaved prepared model:
+        // the DB row becomes the ->original baseline and fills every attribute the
+        // prepare did not set, while each prepared value stays on top
+        // Naturally reveals isDirty(), getDirty() and getChanges() for Save/Skip decisions
+        // Idempotent: a second under-merge re-applies the same prepared values
+        if ($this->exists) {
+            if (!$this->id)
+                throw new Exception("Model->exists but no ->id");
+            // A prepared model carries an ->original of id only, so without this
+            // every mapped attribute reads as dirty
+            // No DB row (a stale ->exists, or one hidden by a global scope) leaves
+            // the model exactly as it was: everything dirty, that is, fire, because
+            // "never compared" must never read as "no changes"
+            if ($dbModel = $this->find($this->id)) {
+                $prepared         = $this->attributes;
+                $this->attributes = $dbModel->attributes;
+                $this->syncOriginal();
+                foreach ($prepared as $key => $value) {
+                    $this->attributes[$key] = $value;
+                }
+            }
+        }
+
+        return $this;
+    }
+
+    public function walkModelHierarchy(callable $callback, array $classesToIgnore = [User::class, Server::class], Model $previousModel = NULL): Collection
+    {
+        // The compareFullOneToOneChainTo() traversal, with the comparison
+        // replaced by an arbitrary $callback: $this, then every hasMany member,
+        // single relation, and the whole 1-1/Leaf chain above it
+        $callback($this);
+        $models = new Collection([$this]);
+
+        $relations = array_merge($this->belongsTo, $this->hasMany, $this->hasOne);
+        foreach ($relations as $relationName => $relationDetails) {
+            $relatedClass     = $relationDetails[0];
+            $type             = $relationDetails['type'] ?? NULL;
+            $is1to1           = ($type == '1to1' || $type == 'Leaf');
+
+            if (!in_array($relatedClass, $classesToIgnore)) {
+                // Already loaded relations only, unlike compareFullOneToOneChainTo()
+                // which needs to lazy-load the DB side to compare against
+                // A walk acts on the prepared graph, and an unloaded relation is
+                // by definition not part of it: reading $this->$relationName
+                // instead would drag in every log and state row hanging off
+                // domain_data, one SELECT each
+                if (!array_key_exists($relationName, $this->relations)) continue;
+                if ($this->relations[$relationName] === self::IGNORE_RELATION) continue;
+
+                if ($thisRelated  = $this->relations[$relationName]) {
+                    // General branch single level relations checks
+                    // hasMany will return a Collection
+                    if ($thisRelated instanceof Collection) {
+                        foreach ($thisRelated as $key => $thisRelatedModel) {
+                            if ($thisRelatedModel instanceof self
+                                && (!$previousModel || !$previousModel->is($thisRelatedModel))
+                            ) {
+                                $callback($thisRelatedModel);
+                                $models->add($thisRelatedModel);
+                            }
+                        }
+                    }
+                    // Travel up the tree and walk all its relations again
+                    // The recursion $callback()s $thisRelated itself
+                    else if ($thisRelated instanceof self && $is1to1) {
+                        if (!$previousModel || !$previousModel->is($thisRelated))
+                            $models = $models->concat(
+                                $thisRelated->walkModelHierarchy(
+                                    $callback, $classesToIgnore, $this
+                                )
+                            );
+                    }
+                    // Single model
+                    else if ($thisRelated instanceof self) {
+                        if (!$previousModel || !$previousModel->is($thisRelated)) {
+                            $callback($thisRelated);
+                            $models->add($thisRelated);
+                        }
+                    }
+                }
+            }
+        }
+
+        return $models;
     }
 }

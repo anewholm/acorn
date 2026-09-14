@@ -20,21 +20,23 @@ class AuthWrapper
 Event::listen('system.route', function () {
     Event::fire('acorn.beforeRoute');
 
-    // -------------------------------- WebSockets infrastructure
-    Route::get('/api/datachange', DB::class . '@datachange');
-    // TODO: Route::get('/laravel-dashboard', ShowDashboard::class);
+    if (env('ENABLE_ACORN_API')) {
+        // -------------------------------- WebSockets infrastructure
+        Route::get('/api/datachange', DB::class . '@datachange');
+        // TODO: Route::get('/laravel-dashboard', ShowDashboard::class);
 
-    Route::match(
-        ['get', 'post'], '/broadcasting/auth',
-        '\\'.AuthWrapper::class.'@authenticate'
-    )->middleware('web');
+        Route::match(
+            ['get', 'post'], '/broadcasting/auth',
+            '\\'.AuthWrapper::class.'@authenticate'
+        )->middleware('web');
 
-    Route::get( '/api/comment', DB::class . '@comment');
-    Route::post('/api/comment', DB::class . '@comment');
+        Route::get( '/api/comment', DB::class . '@comment');
+        Route::post('/api/comment', DB::class . '@comment');
 
-    // -------------------------------- Views
-    Route::get( '/backend/acorn/names', Names::class . '@index');
-    Route::get( '/backend/acorn/tasks', Tasks::class . '@index');
+        // -------------------------------- Views
+        Route::get( '/backend/acorn/names', Names::class . '@index');
+        Route::get( '/backend/acorn/tasks', Tasks::class . '@index');
 
-    Event::fire('acorn.route');
+        Event::fire('acorn.route');
+    }
 }, PHP_INT_MIN);
