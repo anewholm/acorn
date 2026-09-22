@@ -1,9 +1,11 @@
 <?php namespace Acorn;
 
 use DB;
+use Arr;
 use App;
 use Lang;
 use Event;
+use Exception;
 use BackendAuth;
 use BackendMenu;
 use Url;
@@ -38,6 +40,211 @@ use Acorn\Console\CreateSystem\CommentShow;
 use Acorn\Console\CreateSystem\CommentSet;
 use Acorn\Console\CreateSystem\CommentExclude;
 use Acorn\Scopes\GlobalChainScope;
+
+/**
+ * data_get() that can tell a MISSING key from a NULL value.
+ *
+ * Laravel's cannot, and on an Eloquent model that is not a nuance -- it is
+ * wrong. data_get() tests presence with Arr::exists()/isset(), Arr::exists()
+ * on an ArrayAccess calls offsetExists(), and Eloquent's offsetExists() is
+ * `! is_null($this->getAttribute($offset))` (Model.php:2246). So a column that
+ * is present and NULL reports as absent, indistinguishable from a typo.
+ *
+ * The cost of that conflation is not the wrong answer, it is the DEFENCE
+ * against it: a mapping author marks the path optional to stop a legitimate
+ * NULL aborting the run, and the same mark then also swallows a misspelt path,
+ * which resolves to NULL and silently sends an empty field.
+ *
+ * So the three outcomes Laravel collapses into one are kept apart, and each
+ * has its own reaction. Whatever a handler returns is returned from here.
+ *
+ *   | outcome                        | reaction     | default              |
+ *   |--------------------------------|--------------|----------------------|
+ *   | key does not exist             | $keyNotFound | throws               |
+ *   |                                |              | DataGetKeyNotFound   |
+ *   | a link resolves NULL part-way  | $segmentNull | throws               |
+ *   |   (`salesperson_code.code`)    |              | DataGetSegmentNull   |
+ *   | the FINAL value is NULL        | $default     | NULL                 |
+ *
+ *   $keyNotFound(string $segment, array|string $path, mixed $subject): mixed
+ *   $segmentNull(string $segment, array|string $path, mixed $subject): mixed
+ *
+ * Both handlers default to THROWING, which is the strict reading: say what you
+ * meant. A caller that wants Laravel's old silence passes
+ * `fn() => NULL` for either. That is the call FieldMappings will have to make
+ * per mapping -- a `?`-marked path wants NULL, an unmarked one wants the throw.
+ *
+ * NAMESPACED. This file is `namespace Acorn`, so this is
+ * \Acorn\acorn_data_get() and callers elsewhere must qualify it. The guard
+ * below says so too -- function_exists() with a bare name only ever tests the
+ * GLOBAL table, so it would never have matched this definition.
+ */
+if (! function_exists('Acorn\acorn_data_get')) {
+    class DataGetKeyNotFound extends Exception {}
+    class DataGetSegmentNull extends DataGetKeyNotFound {}
+
+    // The default reaction: an unknown key is an author error, so it is loud.
+    // Takes the full $keyNotFound signature rather than just the segment --
+    // PHP would tolerate the extra arguments silently, but the path and the
+    // class it failed ON are the two things that make the message diagnosable.
+    // $exception is ::class, NOT the bare string 'DataGetKeyNotFound'. PHP
+    // resolves a DYNAMIC class name against the GLOBAL namespace, never the
+    // current one, so `new $exception` on a bare string dies with
+    // Class "DataGetKeyNotFound" not found -- and only at the moment a key
+    // first goes missing, which is the worst time to discover it.
+    function acorn_data_get_throw($segment, $path, $subject,
+                                  string $exception = DataGetKeyNotFound::class,
+                                  string $problem   = 'not found') {
+        $pathString = (is_array($path) ? implode('.', $path) : $path);
+        $on         = (is_object($subject) ? get_class($subject) : gettype($subject));
+        throw new $exception("'$segment' of '$pathString' $problem on $on");
+    }
+
+    // NULLable, not a string default: PHP refuses a string default on a
+    // callable-typed parameter outright ("Cannot use string as default value
+    // for parameter of type callable"), and it is a COMPILE-time rule, so the
+    // whole module fails to load rather than failing on use. The first-class
+    // callable below also resolves in THIS namespace -- a bare
+    // 'acorn_data_get_throw' string would be looked up globally and never
+    // found, since the function is Acorn\acorn_data_get_throw.
+    function acorn_data_get($target, $key, $default = NULL, ?callable $keyNotFound = NULL, ?callable $segmentNull = NULL)
+    {
+        $keyNotFound ??= acorn_data_get_throw(...);
+        // A CLOSURE, not the bare first-class callable: the default has to
+        // carry the other exception class and the other wording, and
+        // "not found" would be actively wrong here -- the segment WAS found,
+        // it holds NULL.
+        $segmentNull ??= fn($segment, $path, $subject) => acorn_data_get_throw(
+            $segment, $path, $subject, DataGetSegmentNull::class, 'resolved to NULL part-way along');
+
+        if (is_null($key)) {
+            return $target;
+        }
+
+        $path = $key;
+        $key  = is_array($key) ? $key : explode('.', $key);
+
+        foreach ($key as $i => $segment) {
+            unset($key[$i]);
+
+            if (is_null($segment)) {
+                return $target;
+            }
+
+            if ($segment === '*') {
+                // Fully qualified: in this namespace a bare Collection would
+                // be Acorn\Collection and miss a plain Illuminate one.
+                if ($target instanceof \Illuminate\Support\Collection) {
+                    $target = $target->all();
+                } elseif (! is_iterable($target)) {
+                    return $keyNotFound($segment, $path, $target);
+                }
+
+                $result = [];
+
+                foreach ($target as $item) {
+                    // ALL THREE passed on. With $keyNotFound in the third slot
+                    // it landed in $default, so a missing key under a wildcard
+                    // threw the built-in instead of calling the caller's
+                    // handler, and the caller's own $default was discarded.
+                    $result[] = acorn_data_get($item, $key, $default, $keyNotFound, $segmentNull);
+                }
+
+                return in_array('*', $key) ? Arr::collapse($result) : $result;
+            }
+
+            // $subject, not $target: the destructure below overwrites $target,
+            // and the object the lookup FAILED ON is the useful half of any
+            // message $keyNotFound wants to build.
+            $subject          = $target;
+            [$found, $target] = acorn_data_get_segment($target, $segment);
+
+            if (! $found) {
+                return $keyNotFound($segment, $path, $subject);
+            }
+
+            // A NULL part-way along is its OWN outcome, distinct from both a
+            // bad path and a NULL final value. `salesperson_code.code` on an
+            // order with no salesperson is an empty chain, not a typo: the
+            // relation is declared, it simply resolves to no row. So the walk
+            // stops here rather than reporting the tail as missing, and
+            // $segmentNull decides what that means to the caller.
+            //
+            // $subject is the object the chain broke ON; $segment is the link
+            // that came back NULL; $key still holds the unwalked remainder.
+            if (is_null($target) && $key) {
+                return $segmentNull($segment, $path, $subject);
+            }
+        }
+
+        // Default only takes effect if the target key is found
+        // and the value is null
+        if (is_null($target)) $target = $default;
+
+        return $target;
+    }
+
+    function acorn_data_get_segment($target, $segment): array
+    {
+        $notFound = [FALSE, NULL];
+
+        // ---- Eloquent/Winter model: the case Laravel gets wrong.
+        if ($target instanceof \Illuminate\Database\Eloquent\Model) {
+            // A loaded column, NULL included. getAttribute() rather than the
+            // raw array so casts and accessors still apply.
+            if (array_key_exists($segment, $target->getAttributes()))
+                return [TRUE, $target->getAttribute($segment)];
+
+            // An already-loaded relation, including one that loaded as NULL.
+            if ($target->relationLoaded($segment))
+                return [TRUE, $target->getRelation($segment)];
+
+            // A DECLARED relation, loaded here. Winter declares relations in
+            // $belongsTo/$hasMany/... arrays rather than as methods, so
+            // hasRelation() is the only reliable test -- isRelation() reads
+            // methods and answers FALSE for every relation in this codebase.
+            if (method_exists($target, 'hasRelation') && $target->hasRelation($segment))
+                return [TRUE, $target->{$segment}];
+
+            // A computed attribute. Present even when it returns NULL, which
+            // is exactly the case isset() would have hidden.
+            if ($target->hasGetMutator($segment)
+             || (method_exists($target, 'hasAttributeMutator') && $target->hasAttributeMutator($segment)))
+                return [TRUE, $target->getAttribute($segment)];
+
+            return $notFound;
+        }
+
+        // ---- Arrays and other ArrayAccess. Arr::exists() uses
+        // array_key_exists() for a real array, which is already NULL-correct;
+        // only Eloquent's own offsetExists() was the liar.
+        if (Arr::accessible($target)) {
+            if (Arr::exists($target, $segment))
+                return [TRUE, $target[$segment]];
+
+            // An out-of-range NUMERIC index on a container that EXISTS is the
+            // chain running out, not a bad path -- `edges.0.node.id` where
+            // Shopify answered `edges: []`, or `...__product.0.sku` on one of
+            // the 61 variant-less products. Reported as present-and-NULL so
+            // the walk above turns it into a segment-NULL (mid-path) or plain
+            // NULL (last segment), both of which `?` covers. A NAMED key that
+            // is absent still falls through to notFound and stays an error.
+            if (is_numeric($segment))
+                return [TRUE, NULL];
+        }
+
+        // ---- Plain object. property_exists(), not isset(), so a declared
+        // property holding NULL counts as present.
+        if (is_object($target) && property_exists($target, $segment))
+            return [TRUE, $target->{$segment}];
+
+        // Last resort for a magic __get with no backing property.
+        if (is_object($target) && isset($target->{$segment}))
+            return [TRUE, $target->{$segment}];
+
+        return $notFound;
+    }
+}
 
 class ServiceProvider extends ModuleServiceProvider
 {
