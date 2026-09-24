@@ -2167,4 +2167,34 @@ SQL;
 
         return $models;
     }
+
+    /**
+     * The table's column names, read once per table per process.
+     *
+     * NOT an override: getColumnListing() lives on Illuminate's SCHEMA builder,
+     * a different class from this QUERY builder, so there is no parent:: to
+     * call. It is here because this is where a caller already holds a model
+     * and a table, and because Laravel's own is uncached -- Schema\Builder
+     * queries information_schema on every single call, which is too expensive
+     * to put in a per-model loop.
+     *
+     * Static, so the cache outlives any one builder. Keyed by connection as
+     * well as table: the same table name can exist on two connections (the NAV
+     * foreign-data-wrapper schemas being the obvious case) and they need not
+     * agree.
+     */
+    public function getColumnListing(): array
+    {
+        static $cache = [];
+
+        $table      = $this->getTable();
+        $connection = $this->getConnectionName() ?: 'default';
+        $key        = "$connection.$table";
+
+        if (!array_key_exists($key, $cache)) {
+            $cache[$key] = $this->getConnection()->getSchemaBuilder()->getColumnListing($table);
+        }
+
+        return $cache[$key];
+    }
 }
