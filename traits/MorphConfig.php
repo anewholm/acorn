@@ -15,6 +15,7 @@ use DB;
 use Yaml;
 use File;
 use Winter\Storm\Database\Model;
+use Acorn\Model as AcornModel;
 use Acorn\User\Models\User;
 
 Trait MorphConfig
@@ -38,23 +39,23 @@ Trait MorphConfig
         // TODO: Rationalise the model, controller model ideas
         $isRelationManager = ($this instanceof RelationController);
         $modelClass        = ($isRelationManager && $this->relationModel
-            ? get_class($this->relationModel) 
+            ? get_class($this->relationModel)
             : $this->getConfig('modelClass')
         );
-        $controllerModel   = 
+        $controllerModel   =
             (isset($this->relationModel) ? $this->relationModel :
             (isset($this->model) ? $this->model :
-            (isset($this->controller->widget->form->model) ? $this->controller->widget->form->model : 
-            (isset($this->controller->widget->list->model) ? $this->controller->widget->list->model : 
+            (isset($this->controller->widget->form->model) ? $this->controller->widget->form->model :
+            (isset($this->controller->widget->list->model) ? $this->controller->widget->list->model :
             NULL
         ))));
         $controllerModelClass = ($controllerModel ? get_class($controllerModel) : NULL);
         // Popup situations, with parent model context
-        $parentModel       = post(RelationController::PARAM_PARENT_MODEL);
+        $parentClass       = post(RelationController::PARAM_PARENT_MODEL);
         $parentModelId     = post(RelationController::PARAM_PARENT_MODEL_ID);
         $user              = BackendAuth::user();
         $context           = (property_exists($this, 'context') ? $this->context : NULL);
-        $isPopup           = (bool) $parentModel;
+        $isPopup           = (bool) $parentClass;
 
         if (is_string($configFile) && $configFile) {
             $configFileParts = explode('/', $configFile);
@@ -78,7 +79,7 @@ Trait MorphConfig
                                 else if (isset($filterConfig['noRelationManager']) && $filterConfig['noRelationManager']) {
                                     unset($config->scopes[$name]);
                                 } else if ($removeRmUserFilters
-                                    && class_exists(User::class) 
+                                    && class_exists(User::class)
                                     && isset($filterConfig['modelClass'])
                                 ) {
                                     // Also expensive: all users
@@ -86,11 +87,11 @@ Trait MorphConfig
                                     $filterModel = new $filterConfig['modelClass'];
                                     if (is_a($filterModel, User::class)) {
                                         unset($config->scopes[$name]);
-                                    } else if (property_exists($filterModel, 'belongsTo') 
+                                    } else if (property_exists($filterModel, 'belongsTo')
                                         && is_array($filterModel->belongsTo)
                                     ) {
                                         foreach ($filterModel->belongsTo as $relationConfig) {
-                                            if (isset($relationConfig[0]) 
+                                            if (isset($relationConfig[0])
                                                 && $relationConfig[0] == User::class
                                                 && isset($relationConfig['type'])
                                                 && in_array($relationConfig['type'], array('1to1', 'Leaf'))
@@ -128,7 +129,7 @@ Trait MorphConfig
 
                     // --------------------------- Advanced
                     if (   !Session::get('advanced')
-                        && property_exists($config, 'scopes') 
+                        && property_exists($config, 'scopes')
                         && is_array($config->scopes)
                     ) {
                         foreach ($config->scopes as $name => &$filterConfig) {
@@ -184,8 +185,8 @@ Trait MorphConfig
                     // So forms.js supports select[@default] HTML attribute
                     if (isset($config->fields)) {
                         foreach ($config->fields as &$fieldConfig) {
-                            if (   isset($fieldConfig['type']) 
-                                && $fieldConfig['type'] == 'dropdown' 
+                            if (   isset($fieldConfig['type'])
+                                && $fieldConfig['type'] == 'dropdown'
                                 && isset($fieldConfig['default'])
                             ) {
                                 $default = $fieldConfig['default'];
@@ -197,11 +198,11 @@ Trait MorphConfig
                             }
                         }
                     }
-                    
+
                     if (isset($config->tabs['fields'])) {
                         foreach ($config->tabs['fields'] as $name => &$fieldConfig) {
-                            if (   isset($fieldConfig['type']) 
-                                && $fieldConfig['type'] == 'dropdown' 
+                            if (   isset($fieldConfig['type'])
+                                && $fieldConfig['type'] == 'dropdown'
                                 && isset($fieldConfig['default'])
                             ) {
                                 $default = $fieldConfig['default'];
@@ -217,7 +218,7 @@ Trait MorphConfig
                     // ------------------------------------------------- Advanced fields toggle
                     if ($advancedGet = get('advanced')) Session::put('advanced', ($advancedGet == '1'));
                     $advanced = Session::get('advanced');
-                    
+
                     if (isset($config->fields)) {
                         foreach ($config->fields as $name => &$fieldConfig) {
                             if (isset($fieldConfig['advanced']) && $fieldConfig['advanced']) {
@@ -264,30 +265,35 @@ Trait MorphConfig
                     }
 
                     // ------------------------------- Auto-hide and set parent model drop-down
-                    // TODO: This does not work if the parent field is 1-1 nested
-                    // e.g. Student.user[languages] => user_user_language.user (student)
-                    if ($isPopup && $parentModel) {
+                    if ($isPopup && $parentClass) {
+                        // class => model, one query per chain step
+                        $parentModel    = ($parentModelId ? $parentClass::find($parentModelId) : NULL);
+                        $ancestorModels = (method_exists($parentModel, 'oneToOneChain')
+                            ? $parentModel->oneToOneChain(AcornModel::EXISTS_ONLY, AcornModel::BY_CLASS, AcornModel::AND_SELF)
+                            : []
+                        );
+
                         foreach ($config->fields as $fieldName => &$fieldConfig) {
                             // Look for a parent model selector
                             $dropDownModel = NULL;
-                            
+
                             // type: dropdown + options call
                             // Create-system standard drop-down specification
                             // options: Acorn\University\Models\Student::dropdownOptions
-                            if (isset($fieldConfig['type']) 
+                            if (isset($fieldConfig['type'])
                                 && $fieldConfig['type'] == 'dropdown'
                                 && isset($fieldConfig['options'])
                                 && is_string($fieldConfig['options'])
                             ) {
                                 $optionsParts  = explode('::', $fieldConfig['options']);
                                 $dropDownModel = $optionsParts[0];
-                            } 
+                            }
 
                             // Yaml configs often use type: relation
                             // type: relation
-                            else if (isset($fieldConfig['type']) 
+                            else if (isset($fieldConfig['type'])
                                 && $fieldConfig['type'] == 'relation'
-                                && $modelClass 
+                                && $modelClass
                             ) {
                                 $model = new $modelClass();
                                 if ($model->hasRelation($fieldName)
@@ -298,25 +304,26 @@ Trait MorphConfig
                                 }
                             }
 
-                            if ($dropDownModel) { 
-                                // Set and hide parentModel
-                                // can be useful in nested popups
+                            if ($dropDownModel) {
+                                // Set and hide parentClass and 1-1 chain: can be useful in nested popups
+                                // The relation manager is on the parent's 1-1, e.g. PaXxx.product[materials]
                                 // Morph type to text to prevent option loads
-                                if ($dropDownModel == $parentModel) {
-                                    $fieldConfig['type']      = 'text';
+                                if (isset($ancestorModels[$dropDownModel])) {
+                                    $ancestorModel          = $ancestorModels[$dropDownModel];
+                                    $fieldConfig['type']    = 'text';
+                                    $fieldConfig['default'] = $ancestorModel->id;
                                     $this->appendClass($fieldConfig, 'hidden');
-                                    $fieldConfig['default']   = $parentModelId;
-                                } 
-                                
+                                }
+
                                 // Set and hide the main controllerModel
-                                else if ($controllerModel 
+                                else if ($controllerModel
                                     && $dropDownModel == get_class($controllerModel)
                                 ) {
-                                    $fieldConfig['type']      = 'text';
+                                    $fieldConfig['type']    = 'text';
+                                    $fieldConfig['default'] = $controllerModel->id;
                                     $this->appendClass($fieldConfig, 'hidden');
-                                    $fieldConfig['default']   = $controllerModel->id;
                                 }
-                                
+
                                 // Set and hide common singular parent BelongsTo models
                                 // Student->user has common with UserUserLanguage->user
                                 // when adding XfromXSemi languages
@@ -334,15 +341,15 @@ Trait MorphConfig
                                 }
                             }
                         }
-                        
+
                         // ------------------------------------- Auto-hide parent model reverse relation managers
                         // so that X-X relations do not have repeating relationmanager popup loops
                         if (isset($config->tabs['fields'])) {
                             foreach ($config->tabs['fields'] as $fieldName => &$fieldConfig) {
-                                if (   isset($fieldConfig['type']) 
+                                if (   isset($fieldConfig['type'])
                                     && isset($fieldConfig['relatedModel'])
                                     && $fieldConfig['type'] == 'relationmanager'
-                                    && $fieldConfig['relatedModel'] == $parentModel
+                                    && $fieldConfig['relatedModel'] == $parentClass
                                 ) {
                                     unset($config->tabs['fields'][$fieldName]);
                                 }
@@ -350,10 +357,10 @@ Trait MorphConfig
                         }
                         if (isset($config->secondaryTabs['fields'])) {
                             foreach ($config->secondaryTabs['fields'] as $fieldName => &$fieldConfig) {
-                                if (   isset($fieldConfig['type']) 
+                                if (   isset($fieldConfig['type'])
                                     && isset($fieldConfig['relatedModel'])
                                     && $fieldConfig['type'] == 'relationmanager'
-                                    && $fieldConfig['relatedModel'] == $parentModel
+                                    && $fieldConfig['relatedModel'] == $parentClass
                                 ) {
                                     unset($config->secondaryTabs['fields'][$fieldName]);
                                 }
@@ -361,17 +368,17 @@ Trait MorphConfig
                         }
                         if (isset($config->tertiaryTabs['fields'])) {
                             foreach ($config->tertiaryTabs['fields'] as $fieldName => &$fieldConfig) {
-                                if (   isset($fieldConfig['type']) 
+                                if (   isset($fieldConfig['type'])
                                     && isset($fieldConfig['relatedModel'])
                                     && $fieldConfig['type'] == 'relationmanager'
-                                    && $fieldConfig['relatedModel'] == $parentModel
+                                    && $fieldConfig['relatedModel'] == $parentClass
                                 ) {
                                     unset($config->tertiaryTabs['fields'][$fieldName]);
                                 }
                             }
                         }
                     }
-                        
+
                     // ------------------------------------------------- Popup update without list-editable
                     // When updating a record from a list view, list-editable fields are not necessary
                     // because they can be more easily changed in the list view
@@ -446,7 +453,7 @@ Trait MorphConfig
                             }
                         }
                     }
-                    
+
                     // ------------------------------------------------- class-exists (unconditional — modelClass not needed)
                     // Run before the modelClass guard so widgets without a modelClass (e.g. Calendars)
                     // still have optional-plugin fields stripped before dropdown options are resolved.
@@ -619,9 +626,9 @@ Trait MorphConfig
 
             // Debug checks, e.g. relation validity
             if ($modelClass) {
-                $model = new $modelClass(); 
+                $model = new $modelClass();
                 $validRelations = array_merge($model->belongsTo, $model->hasMany);
-                if (property_exists($model, 'hasManyDeep')) 
+                if (property_exists($model, 'hasManyDeep'))
                     $validRelations = array_merge($validRelations, $model->hasManyDeep);
                 $fieldList = array();
                 if (property_exists($config, 'columns')) $fieldList = $config->columns;
@@ -729,7 +736,7 @@ Trait MorphConfig
         $removeField = FALSE;
         if (isset($fieldConfig['condition']) || isset($fieldConfig['conditions'])) {
             $conditions      = (isset($fieldConfig['condition']) ? $fieldConfig['condition'] : $fieldConfig['conditions']);
-            
+
             // Understand the type of SQL query
             $bareQuery       = trim($conditions, '( ');
             $sqlCommand      = explode(' ', $bareQuery)[0];
@@ -797,25 +804,25 @@ Trait MorphConfig
                 // Pre-defined
                 switch ($name) {
                     case 'create-popup':
-                        if (!isset($actionConfig['control'])) 
+                        if (!isset($actionConfig['control']))
                             $actionConfig['control'] = 'popup';
                         break;
                     case 'view-add-models':
-                        if (is_string($actionConfig)) 
+                        if (is_string($actionConfig))
                             $actionConfig = array('href' => $actionConfig);
-                        if (!isset($actionConfig['control'])) 
+                        if (!isset($actionConfig['control']))
                             $actionConfig['control'] = 'newtab';
                         break;
                     case 'goto-form-group-selection':
-                        if (is_string($actionConfig)) 
+                        if (is_string($actionConfig))
                             $actionConfig = array('href' => $actionConfig);
-                        if (!isset($actionConfig['control'])) 
+                        if (!isset($actionConfig['control']))
                             $actionConfig['control'] = 'newtab';
                         break;
                     case 'goto-event':
-                        if (!isset($actionConfig['href'])) 
+                        if (!isset($actionConfig['href']))
                             $actionConfig['href'] = '/backend/acorn/calendar/months#!/event/:event';
-                        if (!isset($actionConfig['control'])) 
+                        if (!isset($actionConfig['control']))
                             $actionConfig['control'] = 'newtab';
                         break;
                     case 'debug':
@@ -903,7 +910,7 @@ Trait MorphConfig
             if ($subFieldName != 'id' && $includeContext != 'no-include') {
                 // Config changes
                 // TODO: support relation and fileupload fields on create
-                // Currently relation & fileupload will crash 
+                // Currently relation & fileupload will crash
                 // because the relations are null on create
                 if ($subType == 'relation') {
                     if (isset($subFieldConfig['options'])) {

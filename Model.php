@@ -77,6 +77,9 @@ class Model extends BaseModel
     public const LE_DELETE_ON_NULL = 2; // Row deletes
     public const LE_FALSE_ON_NULL = 3;  // Useful for missing boolean checkbox values
     public const DERIVED_ONLY = TRUE;
+    public const EXISTS_ONLY = TRUE;
+    public const BY_CLASS = TRUE;
+    public const AND_SELF = TRUE;
     public const IGNORE_RELATION = '__NOT_INCLUDED__';
 
     public $printable = FALSE;
@@ -605,16 +608,25 @@ class Model extends BaseModel
         return $return;
     }
 
-    public function oneToOneChain(): array
+    public function oneToOneChain(bool $existsOnly = FALSE, bool $byClass = FALSE, bool $andSelf = FALSE): array
     {
+        // If the last step is a un-hydrated-non-attached model
+        // then it can be an empty model
         $modelChain    = [];
         $model         = $this;
+
+        if ($andSelf && (!$existsOnly || $model->exists)) {
+            $key = ($byClass ? get_class($model) : '.');
+            $modelChain[$key] = $model;
+        }
+
         $oneToOneChain = self::oneToOneChainFor($this);
         foreach ($oneToOneChain as $relationName) {
-            // If the last step is a un-hydrated-non-attached model
-            // then it can be an empty model
             $model = ($model->$relationName ?: $model->$relationName()->getRelated());
-            $modelChain[$relationName] = $model;
+            if (!$existsOnly || $model->exists) {
+                $key = ($byClass ? get_class($model) : $relationName);
+                $modelChain[$key] = $model;
+            }
         }
 
         return $modelChain;
