@@ -15,6 +15,7 @@ use Exception;
 use BadMethodCallException;
 use Illuminate\Database\Eloquent\RelationNotFoundException;
 use InvalidArgumentException;
+use Winter\Storm\Database\QueryBuilder;
 
 class Builder extends BaseBuilder
 {

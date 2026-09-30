@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Cache;
 use \Winter\Storm\Argon\Argon;
 use \DateTime;
 use Illuminate\Support\Collection as SupportCollection;
+use \Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 
 use Str;
 use BackendAuth;
@@ -83,6 +84,8 @@ class Model extends BaseModel
     public const IGNORE_RELATION = '__NOT_INCLUDED__';
 
     public $printable = FALSE;
+    public $insertAdoptOnly = [];
+    protected bool $adoptedOnInsert = FALSE;
     public static $globalScope;
     public $globalScopeSubQuery; // Passing down the apply chain
     public $afterListEditableSaveFunctions = array();
@@ -484,6 +487,57 @@ class Model extends BaseModel
         }
 
         return $ret;
+    }
+
+    // Insert, or adopt the existing row holding the same key. Never updates
+    public static function insertOrAdopt(array $attributes): static
+    {
+        $model = new static($attributes);
+        $model->save(); // => insertAndSetId(...) below
+        return $model;
+    }
+
+    // Only the INSERT statement differs. parent::performInsert() still fires
+    // creating/created, sets the timestamps and marks the model as existing,
+    // so Winter's belongsTo association picks up the id on afterSave
+    protected function insertAndSetId(EloquentBuilder $query, $attributes)
+    {
+        if ($this->insertAdoptOnly) {
+            $base = $query->getQuery();
+            $base->applyBeforeQueryCallbacks();
+            $sql  = $base->grammar->compileInsertOrAdopt($base, $attributes, $this->insertAdoptOnly);
+            $rows = $base->getConnection()->selectFromWriteConnection($sql, $base->cleanBindings($attributes));
+            $this->adoptedOnInsert = !$rows;
+            $row  = ($rows
+                ? (array) $rows[0]
+                // Nothing RETURNED: the key exists, so ADOPT that row. Safe as a
+                // second statement because the row is immutable
+                : $this->newQueryWithoutScopes()
+                    ->where(array_intersect_key($attributes, array_flip($this->insertAdoptOnly)))
+                    ->firstOrFail()
+                    ->getAttributes()
+            );
+            // RETURNING * is the whole row, DB defaults and generated columns included
+            $this->setRawAttributes($row, TRUE);
+        } else {
+            parent::insertAndSetId($query, $attributes);
+        }
+    }
+
+    protected function performInsert(EloquentBuilder $query)
+    {
+        $inserted = parent::performInsert($query);
+        // An adopted row was found, not created
+        if ($this->adoptedOnInsert) $this->wasRecentlyCreated = FALSE;
+        return $inserted;
+    }
+
+    // The trigger already forbids it; this says why, in PHP
+    protected function performUpdate(EloquentBuilder $query)
+    {
+        if ($this->insertAdoptOnly && $this->isDirty())
+            throw new Exception(get_class($this) . ' is immutable (tr_UPDATE_not_allowed): insert or adopt only');
+        return parent::performUpdate($query);
     }
 
     public static function nextNewModelId(): int
@@ -1135,6 +1189,13 @@ class Model extends BaseModel
         // Ensure we remain in the family
         // causes chained queries to always work with our Builder
         return new Builder($query);
+    }
+
+    protected function newBaseQueryBuilder()
+    {
+        $query = parent::newBaseQueryBuilder();
+        $query->grammar = $query->getConnection()->withTablePrefix(new PostgresGrammar());
+        return $query;
     }
 
     public function newCollection(array $models = [])
