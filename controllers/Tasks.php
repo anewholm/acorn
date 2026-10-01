@@ -38,39 +38,41 @@ class Tasks extends Controller
         // Compile the task data
         $tasks = array();
         $task  = new Task;
-        
-        $ics   = file_get_contents($task->table);
-        $tasksParts1 = explode('BEGIN:VTODO', $ics);
-        foreach ($tasksParts1 as $taskParts2) {
-            $taskParts3 = explode('END:VTODO', $taskParts2);
-            if (isset($taskParts3[1])) {
-                $taskDetails = $taskParts3[0];
-                preg_match_all("/^([A-Z]+):(.*)/m", $taskDetails, $matches);
-                $createValues = array();
-                foreach ($matches[0] as $i => $match) {
-                    $name  = strtolower($matches[1][$i]);
-                    $value = trim($matches[2][$i]);
-                    switch ($name) {
-                        case 'status':
-                            $value = ($value == 'COMPLETED');
-                            $name  = 'completed';
-                            break;
-                        case 'priority':
-                            $value = ($value == '1');
-                            break;
-                        case 'summary':
-                            $name = 'name';
-                            break;
-                        default:
-                            $name = NULL;
-                    }
-                    if ($name) $createValues[$name] = $value;
-                }
 
-                // Return Task models
-                $task = new Task($createValues);
-                if ($task->name && !$task->completed)
-                    array_push($tasks, $task);
+        if (file_exists($task->table)) {
+            $ics   = file_get_contents($task->table);
+            $tasksParts1 = explode('BEGIN:VTODO', $ics);
+            foreach ($tasksParts1 as $taskParts2) {
+                $taskParts3 = explode('END:VTODO', $taskParts2);
+                if (isset($taskParts3[1])) {
+                    $taskDetails = $taskParts3[0];
+                    preg_match_all("/^([A-Z]+):(.*)/m", $taskDetails, $matches);
+                    $createValues = array();
+                    foreach ($matches[0] as $i => $match) {
+                        $name  = strtolower($matches[1][$i]);
+                        $value = trim($matches[2][$i]);
+                        switch ($name) {
+                            case 'status':
+                                $value = ($value == 'COMPLETED');
+                                $name  = 'completed';
+                                break;
+                            case 'priority':
+                                $value = ($value == '1');
+                                break;
+                            case 'summary':
+                                $name = 'name';
+                                break;
+                            default:
+                                $name = NULL;
+                        }
+                        if ($name) $createValues[$name] = $value;
+                    }
+
+                    // Return Task models
+                    $task = new Task($createValues);
+                    if ($task->name && !$task->completed)
+                        array_push($tasks, $task);
+                }
             }
         }
 
@@ -80,7 +82,7 @@ class Tasks extends Controller
     public function index()
     {
         $this->pageTitle = trans('acorn::lang.models.task.label_plural');
-        
+
         // Compile the task data
         $tasks = $this->getRecords();
         usort($tasks, function($a, $b){return ($a->priority == $b->priority
