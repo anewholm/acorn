@@ -82,6 +82,8 @@ class Model extends BaseModel
     public const BY_CLASS = TRUE;
     public const AND_SELF = TRUE;
     public const IGNORE_RELATION = '__NOT_INCLUDED__';
+    public const KEEP_RUNS = FALSE;
+    public const EXCLUDE_LINE_BREAKS = FALSE;
 
     public $printable = FALSE;
     public $insertAdoptOnly = [];
@@ -546,10 +548,51 @@ class Model extends BaseModel
         return $nextNewModelId++;
     }
 
+    public static function whitespaceNormalise(string $raw, string $replace = ' ', bool $collapseRuns = TRUE, bool $includeLineBreaks = TRUE): string
+    {
+        // By default will collapse runs and line breaks
+        // For 1 line fields, like emails, use default
+        // But for bodies and descriptions, use KEEP_RUNS & EXCLUDE_LINE_BREAKS
+        $plusRuns   = ($collapseRuns      ? '+'   : '');
+        $lineBreaks = ($includeLineBreaks ? '\\s' : ' ');
+
+        // Invisible format characters are never a space: always wrong, always removed
+        // We failover to $raw in case of invalid UTF-8 sequences
+        $raw = preg_replace('/[\x{200B}-\x{200D}\x{2060}\x{FEFF}]/u', '', $raw) ?? $raw;
+        // Line breaks and runs
+        return preg_replace("/[$lineBreaks\p{Z}]$plusRuns/u", $replace, $raw) ?? $raw;
+    }
+
+    public static function whitespaceTranslate(string $raw): string
+    {
+        // Every Unicode space and invisible, not just ASCII \s. NAV
+        // holds e.g. U+2002 (en space), which PHP's trim() keeps and
+        // Postgres' \s -- the _not_empty_trimmed CHECKs -- refuses:
+        // C003656's Shipment_Email stopped the 2026-10-01 cut-over.
+        return self::whitespaceNormalise($raw, ' ', self::KEEP_RUNS, self::EXCLUDE_LINE_BREAKS);
+    }
+
+    public function nullifyEmptyStringAttributes(): void
+    {
+        self::nullifyEmptyStringAttributesOn($this);
+    }
+
+    public static function nullifyEmptyStringAttributesOn(self|array &$model): void
+    {
+        if ($model instanceof self) $model = &$model->attributes;
+        foreach ($model as $key => &$value) {
+            if (is_string($value)) {
+                $value = trim(self::whitespaceTranslate($value));
+                if ($value === '') $value = NULL;
+            }
+        }
+    }
+
     public function ordinalText(): string
     {
         // 1st|2nd|3rd|...
-        return $this->ordinal . self::ordinal($this->ordinal);
+        $suffix = self::ordinal($this->ordinal);
+        return "$this->ordinal$suffix";
     }
 
     public static function ordinal(int|NULL $value): string|NULL
