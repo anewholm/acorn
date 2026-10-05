@@ -369,7 +369,7 @@ SQL
         $this->createAggregate("agg_$baseName", $functionName, $parameterType, $parallel);
     }
 
-    public function addUniqueConstraint(string $table, array $columns, string $name = NULL): string
+    public function addUniqueConstraint(string $table, array $columns, ?string $name = NULL): string
     {
         if (is_null($name)) $name = "{$table}_" . implode('_', $columns);
         $exists = DB::selectOne('SELECT 1 FROM pg_constraint WHERE conname = ?', [$name]);

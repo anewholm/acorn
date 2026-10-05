@@ -13,7 +13,7 @@ class BackendRequestController extends BackendController {
     // Refuse instantiation
     protected function __construct() {}
 
-    public static function getControllerInfo(string $url = NULL): ?array {
+    public static function getControllerInfo(?string $url = NULL): ?array {
         if (!$url) $url = Request::url();
         $url = trim($url, '/');
         
@@ -52,12 +52,12 @@ class BackendRequestController extends BackendController {
         return $this->requestedController;
     }
 
-    public static function getController(string $url = NULL): ?Controller {
+    public static function getController(?string $url = NULL): ?Controller {
         $controllerInfo = self::getControllerInfo($url);
         return (isset($controllerInfo['controller']) ? $controllerInfo['controller'] : NULL);
     }
 
-    public static function isUpdate(string $url = NULL): bool {
+    public static function isUpdate(?string $url = NULL): bool {
         $controllerInfo = self::getControllerInfo($url);
         return (isset($controllerInfo['action']) && $controllerInfo['action'] == 'update');
     }

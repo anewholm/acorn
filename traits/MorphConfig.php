@@ -663,7 +663,7 @@ Trait MorphConfig
         }
     }
 
-    protected static function getSettingsModel(string $modelClass): string|NULL
+    protected static function getSettingsModel(string $modelClass): ?string
     {
         // TODO: This will fail for create-system embedded 1-1 fields
         // inherited from a belongsTo Model
@@ -731,7 +731,7 @@ Trait MorphConfig
         return FALSE;
     }
 
-    protected static function conditionRemove(array &$fieldConfig, Model|NULL $model): bool
+    protected static function conditionRemove(array &$fieldConfig, ?Model $model): bool
     {
         $removeField = FALSE;
         if (isset($fieldConfig['condition']) || isset($fieldConfig['conditions'])) {
@@ -780,7 +780,7 @@ Trait MorphConfig
         }
     }
 
-    protected static function adornFieldWithActions(array &$fieldConfig, Model|NULL $controllerModel): void
+    protected static function adornFieldWithActions(array &$fieldConfig, ?Model $controllerModel): void
     {
         if (isset($fieldConfig['actions']) && is_array($fieldConfig['actions'])) {
             $lis = '';
@@ -879,7 +879,7 @@ Trait MorphConfig
         return $fieldName;
     }
 
-    protected static function nestField(string|array $nest, string|array $fieldName, int &$nestlevel = NULL): string
+    protected static function nestField(string|array $nest, string|array $fieldName, ?int &$nestlevel = NULL): string
     {
         if (!is_array($nest))      $nest      = HtmlHelper::nameToArray($nest);
         if (!is_array($fieldName)) $fieldName = HtmlHelper::nameToArray($fieldName);
@@ -898,7 +898,7 @@ Trait MorphConfig
         return ($fieldName && $fieldName[0] == '_');
     }
 
-    protected static function processFields(array &$configFields, array &$subConfigFields, string $fieldName, string $modelClass = NULL): void
+    protected static function processFields(array &$configFields, array &$subConfigFields, string $fieldName, ?string $modelClass = NULL): void
     {
         $inserts = array();
         foreach ($subConfigFields as $subFieldName => $subFieldConfig) {

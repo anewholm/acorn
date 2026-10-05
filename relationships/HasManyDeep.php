@@ -22,7 +22,7 @@ class HasManyDeep extends StaudenmeirHasManyDeep
      * Create a new has many relationship instance.
      * @return void
      */
-    public function __construct(Builder $query, Model $farParent, array $throughParents, array $foreignKeys, array $localKeys, array $throughRelationObjects, string $relationName = null)
+    public function __construct(Builder $query, Model $farParent, array $throughParents, array $foreignKeys, array $localKeys, array $throughRelationObjects, ?string $relationName = null)
     {
         $this->throughRelationObjects = $throughRelationObjects; // Extra parameter for us, useful for saving
         $this->relationName = $relationName; // Extra parameter for Winter Relationships

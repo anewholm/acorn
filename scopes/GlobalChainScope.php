@@ -41,7 +41,7 @@ class GlobalChainScope implements Scope
     public const IS_THIS = TRUE;
 
     // ------------------------------------ Direct situation on this model
-    public static function globalScopeRelationsOn(Model $model, string $flag = NULL): array
+    public static function globalScopeRelationsOn(Model $model, ?string $flag = NULL): array
     {
         // flag can be 'hierarchy'. This is not used at the moment
         // These can branch in to a tree of multiple global scopes
@@ -86,7 +86,7 @@ class GlobalChainScope implements Scope
         return $chainScopes;
     }
 
-    public static function globalScopeUserSetting(User $user, Model $model): string|NULL {
+    public static function globalScopeUserSetting(User $user, Model $model): ?string {
         // Acorn/University/Models/Entity => global_scope_entity_id
         $globalScopeSetting = NULL;
 
@@ -106,7 +106,7 @@ class GlobalChainScope implements Scope
         return $globalScopeSetting;
     }
 
-    public static function allUserSettings(bool $withSetting = TRUE, User $user = NULL): array
+    public static function allUserSettings(bool $withSetting = TRUE, ?User $user = NULL): array
     {
         // Fast function to get settings from Session
         $names = array();
@@ -145,7 +145,7 @@ class GlobalChainScope implements Scope
         return "$class::globalScope";
     }
 
-    public static function getSettingFor(Model $model): string|NULL
+    public static function getSettingFor(Model $model): ?string
     {
         // On User or Session
         $setting = NULL;
@@ -179,7 +179,7 @@ class GlobalChainScope implements Scope
 
     // --------------------------------------------- Recursive
     // Searching down global-scope relations to the end
-    public static function endGlobalScopeClasses(Model $model, string $flag = NULL, array $fromEndChainModels = NULL): array
+    public static function endGlobalScopeClasses(Model $model, ?string $flag = NULL, ?array $fromEndChainModels = NULL): array
     {
         // Recursive
         // Get the (existing) Models on the ends of the global-scope relation chain(s)
@@ -211,7 +211,7 @@ class GlobalChainScope implements Scope
         return $endChainModels;
     }
 
-    public static function isEndSelectedFrom(Model $model, string $flag = NULL): bool
+    public static function isEndSelectedFrom(Model $model, ?string $flag = NULL): bool
     {
         // Test if THIS model is a selected scope model
         // Useful for display and structure

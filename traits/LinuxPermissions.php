@@ -85,7 +85,7 @@ trait LinuxPermissions
         return parent::save($options, $sessionKey);
     }
 
-    public static function dropdownOptions($form = NULL, $field = NULL, bool|NULL $withoutGlobalScopes = FALSE)
+    public static function dropdownOptions($form = NULL, $field = NULL, ?bool $withoutGlobalScopes = FALSE)
     {
         // TODO: Call parent::dropdownOptions() somewhow? These are simple objects?
         $models = self::all();

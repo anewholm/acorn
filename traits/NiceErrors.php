@@ -69,7 +69,7 @@ Trait NiceErrors
         }
     }
 
-    public function niceSqlError(QueryException $qe): string|NULL {
+    public function niceSqlError(QueryException $qe): ?string {
         $messageAdvanced = $qe->getMessage();
         $messageNice     = NULL;
         $code            = $qe->getCode();

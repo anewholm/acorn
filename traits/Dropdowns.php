@@ -5,7 +5,7 @@ use Winter\Storm\Database\TreeCollection;
 
 Trait Dropdowns
 {
-    public static function dropdownOptions($form = NULL, $field = NULL, bool|NULL $withoutGlobalScopes = FALSE)
+    public static function dropdownOptions($form = NULL, $field = NULL, ?bool $withoutGlobalScopes = FALSE)
     {
         $name = (isset($field->config['nameFrom'])
             ? $field->config['nameFrom']

@@ -88,7 +88,7 @@ class BatchPrint extends ExportModel
         return $value;
     }
 
-    protected function updatePrintedArray(WinterModel $model, string $pdfPath, string $pdfTemplatePath = NULL): void 
+    protected function updatePrintedArray(WinterModel $model, string $pdfPath, ?string $pdfTemplatePath = NULL): void 
     {
         // Record that this template has been printed
         // "printed" array columns

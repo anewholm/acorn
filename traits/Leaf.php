@@ -15,7 +15,7 @@ trait Leaf
         return $this->getLeafTypeModel($throwIfNull)?->unqualifiedClassName();
     }
 
-    public function getLeafTableAttribute($value): string|NULL
+    public function getLeafTableAttribute($value): ?string
     {
         // ->leaf_table => "Company"
         // Useful for ListColumn display
@@ -29,7 +29,7 @@ trait Leaf
         return $ret;
     }
 
-    public function getLeafTableTranslationKey(string|NULL $value = NULL): string|NULL
+    public function getLeafTableTranslationKey(?string $value = NULL): ?string
     {
         $key = NULL;
 
@@ -48,7 +48,7 @@ trait Leaf
         return $key;
     }
 
-    public function getLeafTableCacheClass(bool $fqn = FALSE): string|NULL
+    public function getLeafTableCacheClass(bool $fqn = FALSE): ?string
     {
         // acorn_university_schools => Schools => Acorn\University\Models\School
         $class = NULL;
@@ -73,7 +73,7 @@ trait Leaf
         return $class;
     }
 
-    public function getLeafTableCacheModel(): Model|NULL
+    public function getLeafTableCacheModel(): ?Model
     {
         $leafObject = NULL;
         // This is faster because no SQL calls
@@ -92,7 +92,7 @@ trait Leaf
         return $leafObject;
     }
 
-    public function getLeafHasOnesModel(bool $withoutGlobalScopes = FALSE): Model|NULL
+    public function getLeafHasOnesModel(bool $withoutGlobalScopes = FALSE): ?Model
     {
         $leafObject = NULL;
         $thisClass  = get_class($this);
@@ -148,7 +148,7 @@ trait Leaf
         return ($leafObject ?: $this);
     }
 
-    public function getLeafTypeModel(?bool $throwIfNull = FALSE, bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): Model|NULL
+    public function getLeafTypeModel(?bool $throwIfNull = FALSE, bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): ?Model
     {
         // For base tables that have multiple possible leaf detail tables in a star schema
         // we search the hasOne relations to determine which leaf table has the actual 1-1 object

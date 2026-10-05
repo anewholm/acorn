@@ -486,7 +486,7 @@ HTML
         return $this->makePopup(array($print, $filename), $exportResultForm, '', FALSE);
     }
 
-    public function makePopup(array $breadcrumbs, string $body, string|NULL $footer = '', bool $hasClose = TRUE, string $type = 'info'): string
+    public function makePopup(array $breadcrumbs, string $body, ?string $footer = '', bool $hasClose = TRUE, string $type = 'info'): string
     {
         $eventJs        = 'popup';
         $initJs         = "$('body > .control-popup').trigger('$eventJs');";
@@ -1292,7 +1292,7 @@ HTML;
         return parent::makeView($view);
     }
 
-    public function makeLayout(string $name = null, array $params = [], bool $throwException = true): string|bool
+    public function makeLayout(?string $name = null, array $params = [], bool $throwException = true): string|bool
     {
         if (ServiceProvider::isDebug('layouts')) {
             // Copied from ViewMaker.php

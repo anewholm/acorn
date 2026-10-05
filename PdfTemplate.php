@@ -39,7 +39,7 @@ class PdfTemplate {
     public $title;
     public $templateLocale, $localeFallback;
 
-    public function __construct(string $templateFilePath = NULL, string $mediaDir = 'media')
+    public function __construct(?string $templateFilePath = NULL, string $mediaDir = 'media')
     {
         if ($templateFilePath) $this->loadTemplate($templateFilePath, $mediaDir);
     }
@@ -49,7 +49,7 @@ class PdfTemplate {
         return "$this->mediaDir/$this->templateFilePath";
     }
 
-    protected function getSingleNode(string $xpath, DOMNode $xStartNode = NULL, bool $throwIfMultiple = FALSE): DOMNode|null
+    protected function getSingleNode(string $xpath, ?DOMNode $xStartNode = NULL, bool $throwIfMultiple = FALSE): ?DOMNode
     {
         $xNode     = NULL;
         $xNodeList = $this->xpath->query($xpath, $xStartNode);
@@ -61,7 +61,7 @@ class PdfTemplate {
         return $xNode;
     }
 
-    protected function getNodeValue(string $xpath, DOMNode $xStartNode = NULL): string|null
+    protected function getNodeValue(string $xpath, ?DOMNode $xStartNode = NULL): ?string
     {
         $nodeValue = NULL;
         if ($xNode = $this->getSingleNode($xpath, $xStartNode))
@@ -354,7 +354,7 @@ class PdfTemplate {
         return $this->templateDOM;
     }
 
-    public function translateLanguageCode(string|NULL $code): string|NULL
+    public function translateLanguageCode(?string $code): ?string
     {
         switch ($code) {
             case 'kmr': 
@@ -560,7 +560,7 @@ class PdfTemplate {
         return Storage::url($storagePngPath);
     }
 
-    public static function cleanTemp(string $tempPath = NULL): array
+    public static function cleanTemp(?string $tempPath = NULL): array
     {
         if (!$tempPath) $tempPath = temp_path();
 
@@ -579,7 +579,7 @@ class PdfTemplate {
         return $files;
     }
 
-    public static function convertAllFodtToPdf(string $tempPath = NULL): array
+    public static function convertAllFodtToPdf(?string $tempPath = NULL): array
     {
         if (!$tempPath) $tempPath = temp_path();
 
