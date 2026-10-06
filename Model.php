@@ -2019,6 +2019,20 @@ SQL;
         } // ($is_update || $is_create)
     }
 
+    public function getRelationMethods(bool $ignoreResolved = false): array
+    {
+        // Temporary partial implementation of patch:
+        // https://github.com/wintercms/storm/pull/250/commits/0452ba32bea04b09f3cdf495945bc060c0be4f45
+        // The PR is slightly more correct in one edge case:
+        // if a single relation method gets resolved before the first full scan,
+        // Winter treats that partial entry as complete.
+        // This override neither fixes nor worsens that, and it can't affect Acorn models,
+        // which have no relation methods
+        $relationMethods = parent::getRelationMethods($ignoreResolved);
+        static::$resolvedRelationMethods[static::class] ??= [];
+        return $relationMethods;
+    }
+
     public function compareAttributesTo(Model $otherModel, ?array $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $dotPath = []): array
     {
         // Direct basic attribute comparison
