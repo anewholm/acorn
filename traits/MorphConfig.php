@@ -274,8 +274,13 @@ Trait MorphConfig
                         );
 
                         foreach ($config->fields as $fieldName => &$fieldConfig) {
-                            // Look for a parent model selector
+                            // Look for 1 parent model selector
                             $dropDownModel = NULL;
+                            $popupHidden   = $fieldConfig['popup-hidden'] ?? NULL;
+                            if ($popupHidden === FALSE)
+                                continue;
+                            if ($popupHidden !== TRUE && substr($fieldName, 0, 8) === 'related_')
+                                continue;
 
                             // type: dropdown + options call
                             // Create-system standard drop-down specification
@@ -313,6 +318,7 @@ Trait MorphConfig
                                     $fieldConfig['type']    = 'text';
                                     $fieldConfig['default'] = $ancestorModel->id;
                                     $this->appendClass($fieldConfig, 'hidden');
+                                    break;
                                 }
 
                                 // Set and hide the main controllerModel
@@ -322,6 +328,7 @@ Trait MorphConfig
                                     $fieldConfig['type']    = 'text';
                                     $fieldConfig['default'] = $controllerModel->id;
                                     $this->appendClass($fieldConfig, 'hidden');
+                                    break;
                                 }
 
                                 // Set and hide common singular parent BelongsTo models
@@ -338,6 +345,7 @@ Trait MorphConfig
                                     $this->appendClass($fieldConfig, 'hidden');
                                     $fieldConfig['type']      = 'text';
                                     $fieldConfig['default']   = $controllerFieldModel->id;
+                                    break;
                                 }
                             }
                         }
