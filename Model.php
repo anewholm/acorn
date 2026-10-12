@@ -780,6 +780,7 @@ class Model extends BaseModel
 
     public function parentBaseModel(): ?Model
     {
+        // 1 step up the chain
         $parentBaseModel = NULL;
         if (property_exists($this, 'belongsTo')) {
             // Only type=1to1
@@ -793,7 +794,7 @@ class Model extends BaseModel
                 case 0:
                     break;
                 case 1:
-                    $relationName = $oneToOnes[0];
+                    $relationName    = $oneToOnes[0];
                     $parentBaseModel = $this->$relationName;
                     break;
                 default:
@@ -801,6 +802,31 @@ class Model extends BaseModel
             }
         }
         return $parentBaseModel;
+    }
+
+    public function parentBaseRelationName(): ?string
+    {
+        // 1 step up the chain
+        $foundRelationName = NULL;
+        if (property_exists($this, 'belongsTo')) {
+            // Only type=1to1
+            $oneToOnes = [];
+            foreach ($this->belongsTo as $relationName => $belongsTo) {
+                $type = $belongsTo['type'] ?? NULL;
+                if ($type == '1to1' || $type == 'Leaf')
+                    array_push($oneToOnes, $relationName);
+            }
+            switch (count($oneToOnes)) {
+                case 0:
+                    break;
+                case 1:
+                    $foundRelationName = $oneToOnes[0];
+                    break;
+                default:
+                    throw new Exception("Multiple 1to1 belongTo parents");
+            }
+        }
+        return $foundRelationName;
     }
 
     public function findRelationNameFor(Model|string $target, array $relationTypes = ['hasOne']): ?string
@@ -2201,7 +2227,7 @@ SQL;
         // The callback acts on the model the walk HANDS it, never on $this:
         // [$this, 'underMergeDbModel'] would silently drop that argument and
         // under-merge $this once per model in the graph
-        $touched = $this->walkModelHierarchy(fn(Model $model) => $model->underMergeDbModel());
+        $touched = $this->walkModelHierarchy(fn(Model $model, string $relationType, string $type) => $model->underMergeDbModel());
         return $touched;
     }
 
@@ -2239,53 +2265,59 @@ SQL;
         // The compareFullOneToOneChainTo() traversal, with the comparison
         // replaced by an arbitrary $callback: $this, then every hasMany member,
         // single relation, and the whole 1-1/Leaf chain above it
-        $callback($this);
+        $callback($this, NULL, NULL);
         $models = new Collection([$this]);
 
-        $relations = array_merge($this->belongsTo, $this->hasMany, $this->hasOne);
-        foreach ($relations as $relationName => $relationDetails) {
-            $relatedClass     = $relationDetails[0];
-            $type             = $relationDetails['type'] ?? NULL;
-            $is1to1           = ($type == '1to1' || $type == 'Leaf');
+        $relationTypes = array(
+            'belongsTo' => $this->belongsTo,
+            'hasMany'   => $this->hasMany,
+            'hasOne'    => $this->hasOne
+        );
+        foreach ($relationTypes as $relationType => $relations) {
+            foreach ($relations as $relationName => $relationDetails) {
+                $relatedClass     = $relationDetails[0];
+                $type             = $relationDetails['type'] ?? NULL;
+                $is1to1           = ($type == '1to1' || $type == 'Leaf');
 
-            if (!in_array($relatedClass, $classesToIgnore)) {
-                // Already loaded relations only, unlike compareFullOneToOneChainTo()
-                // which needs to lazy-load the DB side to compare against
-                // A walk acts on the prepared graph, and an unloaded relation is
-                // by definition not part of it: reading $this->$relationName
-                // instead would drag in every log and state row hanging off
-                // domain_data, one SELECT each
-                if (!array_key_exists($relationName, $this->relations)) continue;
-                if ($this->relations[$relationName] === self::IGNORE_RELATION) continue;
+                if (!in_array($relatedClass, $classesToIgnore)) {
+                    // Already loaded relations only, unlike compareFullOneToOneChainTo()
+                    // which needs to lazy-load the DB side to compare against
+                    // A walk acts on the prepared graph, and an unloaded relation is
+                    // by definition not part of it: reading $this->$relationName
+                    // instead would drag in every log and state row hanging off
+                    // domain_data, one SELECT each
+                    if (!array_key_exists($relationName, $this->relations)) continue;
+                    if ($this->relations[$relationName] === self::IGNORE_RELATION) continue;
 
-                if ($thisRelated  = $this->relations[$relationName]) {
-                    // General branch single level relations checks
-                    // hasMany will return a Collection
-                    if ($thisRelated instanceof Collection) {
-                        foreach ($thisRelated as $key => $thisRelatedModel) {
-                            if ($thisRelatedModel instanceof self
-                                && (!$previousModel || !$previousModel->is($thisRelatedModel))
-                            ) {
-                                $callback($thisRelatedModel);
-                                $models->add($thisRelatedModel);
+                    if ($thisRelated  = $this->relations[$relationName]) {
+                        // General branch single level relations checks
+                        // hasMany will return a Collection
+                        if ($thisRelated instanceof Collection) {
+                            foreach ($thisRelated as $key => $thisRelatedModel) {
+                                if ($thisRelatedModel instanceof self
+                                    && (!$previousModel || !$previousModel->is($thisRelatedModel))
+                                ) {
+                                    $callback($thisRelatedModel, $relationType, $type);
+                                    $models->add($thisRelatedModel);
+                                }
                             }
                         }
-                    }
-                    // Travel up the tree and walk all its relations again
-                    // The recursion $callback()s $thisRelated itself
-                    else if ($thisRelated instanceof self && $is1to1) {
-                        if (!$previousModel || !$previousModel->is($thisRelated))
-                            $models = $models->concat(
-                                $thisRelated->walkModelHierarchy(
-                                    $callback, $classesToIgnore, $this
-                                )
-                            );
-                    }
-                    // Single model
-                    else if ($thisRelated instanceof self) {
-                        if (!$previousModel || !$previousModel->is($thisRelated)) {
-                            $callback($thisRelated);
-                            $models->add($thisRelated);
+                        // Travel up the tree and walk all its relations again
+                        // The recursion $callback()s $thisRelated itself
+                        else if ($thisRelated instanceof self && $is1to1) {
+                            if (!$previousModel || !$previousModel->is($thisRelated))
+                                $models = $models->concat(
+                                    $thisRelated->walkModelHierarchy(
+                                        $callback, $classesToIgnore, $this
+                                    )
+                                );
+                        }
+                        // Single model
+                        else if ($thisRelated instanceof self) {
+                            if (!$previousModel || !$previousModel->is($thisRelated)) {
+                                $callback($thisRelated, $relationType, $type);
+                                $models->add($thisRelated);
+                            }
                         }
                     }
                 }
