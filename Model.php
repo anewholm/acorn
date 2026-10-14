@@ -425,7 +425,9 @@ class Model extends BaseModel
         // Dirty Writing checks in fill() include a passed original updated_at field
         // but we do not want to override default behavior
         // This would error on create new
-        if (!property_exists($this, 'timestamps') || $this->timestamps) $this->updated_at = NULL;
+        // We unset the attribute directly to avoid confusing wasChanged() and isDirty()
+        if (!property_exists($this, 'timestamps') || $this->timestamps)
+            unset($this->attributes['updated_at']);
 
         // -------------------------------------------- Main parent save
         // model->exists => TRUE
@@ -2227,7 +2229,7 @@ SQL;
         // The callback acts on the model the walk HANDS it, never on $this:
         // [$this, 'underMergeDbModel'] would silently drop that argument and
         // under-merge $this once per model in the graph
-        $touched = $this->walkModelHierarchy(fn(Model $model, string $relationType, string $type) => $model->underMergeDbModel());
+        $touched = $this->walkModelHierarchy(fn(Model $model, ?string $relationType = NULL, ?string $type = NULL) => $model->underMergeDbModel());
         return $touched;
     }
 
@@ -2260,24 +2262,54 @@ SQL;
         return $this;
     }
 
-    public function walkModelHierarchy(callable $callback, array $classesToIgnore = [User::class, Server::class], ?Model $previousModel = NULL): Collection
+    public function wasHierarchyChanged(): bool
+    {
+        // walkLeaves() visits loaded relations only, recursing up the 'Leaf'
+        // chain; returning FALSE stops it at the first changed base
+        $changed = FALSE;
+        $this->walkLeaves(function (self $base) use (&$changed): bool {
+            // wasRecentlyCreated covers new Models
+            // wasChanged() covers changed Models
+            $changed = ($base->wasRecentlyCreated || $base->wasChanged());
+            return !$changed;
+        });
+        return $changed;
+    }
+
+    public function walkLeaves(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?bool $includeThis = TRUE): Collection
+    {
+        // TODO: Move the above oneToOneChain() suite of methods to use this walkLeaves()
+        return $this->walkModelHierarchy($callback, $classesToIgnore, ['belongsTo'], ['type' => 'Leaf'], $includeThis);
+    }
+
+    public function walkModelHierarchy(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [], ?bool $includeThis = TRUE, ?Model $previousModel = NULL): Collection
     {
         // The compareFullOneToOneChainTo() traversal, with the comparison
         // replaced by an arbitrary $callback: $this, then every hasMany member,
         // single relation, and the whole 1-1/Leaf chain above it
-        $callback($this, NULL, NULL);
-        $models = new Collection([$this]);
+        // $callback(Model $model, ?string $relationType = NULL, ?string $type = NULL)
+        $models = new Collection();
+        if ($includeThis) {
+            $continue = $callback($this, NULL, NULL);
+            if ($continue === FALSE) return $models;
+            $models->add($this);
+        }
 
-        $relationTypes = array(
-            'belongsTo' => $this->belongsTo,
-            'hasMany'   => $this->hasMany,
-            'hasOne'    => $this->hasOne
-        );
-        foreach ($relationTypes as $relationType => $relations) {
+        $relationTypeLists = array();
+        foreach ($relationTypes as $relationType)
+            $relationTypeLists[$relationType] = $this->$relationType;
+
+        foreach ($relationTypeLists as $relationType => $relations) {
             foreach ($relations as $relationName => $relationDetails) {
                 $relatedClass     = $relationDetails[0];
                 $type             = $relationDetails['type'] ?? NULL;
                 $is1to1           = ($type == '1to1' || $type == 'Leaf');
+
+                // e.g. 'Leaf' => TRUE, 'Name' => TRUE
+                foreach ($relationPropertiesMask as $maskProp => $maskValue) {
+                    if (!isset($relationDetails[$maskProp]) || $relationDetails[$maskProp] !== $maskValue)
+                        continue 2;
+                }
 
                 if (!in_array($relatedClass, $classesToIgnore)) {
                     // Already loaded relations only, unlike compareFullOneToOneChainTo()
@@ -2297,7 +2329,8 @@ SQL;
                                 if ($thisRelatedModel instanceof self
                                     && (!$previousModel || !$previousModel->is($thisRelatedModel))
                                 ) {
-                                    $callback($thisRelatedModel, $relationType, $type);
+                                    $continue = $callback($thisRelatedModel, $relationType, $type);
+                                    if ($continue === FALSE) return $models;
                                     $models->add($thisRelatedModel);
                                 }
                             }
@@ -2308,14 +2341,15 @@ SQL;
                             if (!$previousModel || !$previousModel->is($thisRelated))
                                 $models = $models->concat(
                                     $thisRelated->walkModelHierarchy(
-                                        $callback, $classesToIgnore, $this
+                                        $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, TRUE, $this
                                     )
                                 );
                         }
                         // Single model
                         else if ($thisRelated instanceof self) {
                             if (!$previousModel || !$previousModel->is($thisRelated)) {
-                                $callback($thisRelated, $relationType, $type);
+                                $continue = $callback($thisRelated, $relationType, $type);
+                                if ($continue === FALSE) return $models;
                                 $models->add($thisRelated);
                             }
                         }
