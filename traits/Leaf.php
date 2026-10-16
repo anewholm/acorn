@@ -48,7 +48,15 @@ trait Leaf
         return $key;
     }
 
-    public function getLeafTableCacheClass(bool $fqn = FALSE): ?string
+    protected function hasLeafTableCache(): bool
+    {
+        // It might be NULL, but updated by triggers
+        // So NULL would mean NO leaf table, don't check
+        // Note: a refresh() might be required to load the column
+        return array_key_exists('leaf_table', $this->attributes);
+    }
+
+    protected function getLeafTableCacheClass(bool $fqn = FALSE): ?string
     {
         // acorn_university_schools => Schools => Acorn\University\Models\School
         $class = NULL;
@@ -73,7 +81,7 @@ trait Leaf
         return $class;
     }
 
-    public function getLeafTableCacheModel(): ?Model
+    protected function getLeafTableCacheModel(): ?Model
     {
         $leafObject = NULL;
         // This is faster because no SQL calls
@@ -92,7 +100,7 @@ trait Leaf
         return $leafObject;
     }
 
-    public function getLeafHasOnesModel(bool $withoutGlobalScopes = FALSE): ?Model
+    protected function getLeafHasOnesModel(bool $withoutGlobalScopes = FALSE): ?Model
     {
         $leafObject = NULL;
         $thisClass  = get_class($this);
@@ -156,11 +164,21 @@ trait Leaf
         // A trigger maintained Person.leaf_table is the standard cache mechanism
         // which uses the leaf_table and does not need to SQL call each and every $hasOne
 
-        // Check for and use the leaf_table cache column
-        $leafObject = $this->getLeafTableCacheModel();
-
-        // If not, we need to check each relation 1 by 1 for an object
-        if (!$leafObject) $leafObject = $this->getLeafHasOnesModel($withoutGlobalScopes);
+        if (is_null($this->getKey())) {
+            // No primary key, so no leaf row can point at $this
+            // without a $this->id
+            // We do not return an empty Model in the case of leaf_table
+            $leafObject = NULL;
+        }
+        else if ($this->hasLeafTableCache()) {
+            // Check for and use the leaf_table cache column
+            // Can still be NULL, which is valid
+            $leafObject = $this->getLeafTableCacheModel();
+        }
+        else {
+            // If not, we need to check each relation 1 by 1 for an object
+            $leafObject = $this->getLeafHasOnesModel($withoutGlobalScopes);
+        }
 
         // This goes beyond the direct central table => star schema
         // it allows traversal of several 1-1 relations out to the central table and on to the star schema
