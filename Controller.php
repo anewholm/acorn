@@ -996,6 +996,13 @@ HTML;
                 $this->throwNiceSqlError($qe);
             }
 
+            if ($model->exists) {
+                $modelFresh = $model->fresh();
+                Event::fire('acorn.model.actionFunction', [$modelFresh, $fnName, $shortClass]);
+                Event::fire("acorn.model.actionFunction.$fnName", [$modelFresh, $shortClass]);
+                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$modelFresh]);
+            }
+
             // Results
             $message    = NULL;
             $type       = 'info';
