@@ -817,6 +817,7 @@ HTML;
         $fnDatabaseName = $actionFunctionDefinition['fnDatabaseName'];
         $fnParams       = $actionFunctionDefinition['parameters'];
         $returnType     = $actionFunctionDefinition['returnType'];
+        $readOnly       = $actionFunctionDefinition['readOnly'] ?? FALSE;
         $title          = trans($actionFunctionDefinition['label']);
         $resultAction   = $actionFunctionDefinition['resultAction'] ?? NULL;
         $defFields      = $actionFunctionDefinition['fields'] ?? array();
@@ -996,11 +997,11 @@ HTML;
                 $this->throwNiceSqlError($qe);
             }
 
-            if ($model->exists) {
+            if (!$readOnly && $model->exists) {
                 $modelFresh = $model->fresh();
-                Event::fire('acorn.model.actionFunction', [$modelFresh, $fnName, $shortClass]);
-                Event::fire("acorn.model.actionFunction.$fnName", [$modelFresh, $shortClass]);
-                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$modelFresh]);
+                Event::fire('acorn.model.actionFunction', [$modelFresh, $fnName, $shortClass, $model]);
+                Event::fire("acorn.model.actionFunction.$fnName", [$modelFresh, $shortClass, $model]);
+                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$modelFresh, $model]);
             }
 
             // Results
