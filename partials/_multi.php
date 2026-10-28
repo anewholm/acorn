@@ -36,7 +36,7 @@ $action          = (isset($multiConfig['action']) ? $multiConfig['action'] : 'up
 // this is to standardise the Collection display
 // When nested, the valueFrom is forced to the columnName
 // so we introduce a non-standard option nestedValueFrom
-// Value selection failover: nestedValueFrom, valueFrom, select, 'name' 
+// Value selection failover: nestedValueFrom, valueFrom, select, 'name'
 // WinterCMS default behaviour with multi-level relations is to apply the valueFrom/select to the top level relation only
 // we apply it to the final Collection result
 $hasNestedDirective = ($isNested && isset($multiConfig['nestedValueFrom']));
@@ -60,7 +60,7 @@ $relation = $column->relation;
 // relation: directive is necessary for searcheable and sortable
 // valueFrom: is honoured on the Collections below
 if (is_null($value)) {
-    // This can happen when we have a *Many collection with a [name] valueFrom 
+    // This can happen when we have a *Many collection with a [name] valueFrom
     // like legalcase[many-somethings][name]
     // which is a partial. So the valueFrom: name | [name] is resolved
     // before passing the value to the partial.
@@ -121,7 +121,7 @@ if (!is_null($value)) {
         } else {
             $itemClass = gettype($firstItem);
         }
-        print(e(trans($prefix)));
+        if ($prefix) print(e(trans($prefix)));
         print("<ul id='$multiId' class='multi $multiClass $itemClass $cssClassesString'>");
         foreach ($value as $model) {
             // id array => models
@@ -138,7 +138,7 @@ if (!is_null($value)) {
                     $name   = "&lt;$noname&gt;";
                 }
             }
-            
+
             // Output LI item
             print('<li>');
             if ($model instanceof Model) {
@@ -175,7 +175,7 @@ if (!is_null($value)) {
             if (!$continue) break;
         };
         print('</ul>');
-        print(e(trans($suffix)));
+        if ($suffix) print(e(trans($suffix)));
 
         if ($count > $limit) {
             // Leave this "more" link to simply open the full record update screen

@@ -999,9 +999,9 @@ HTML;
 
             if (!$readOnly && $model->exists) {
                 $modelFresh = $model->fresh();
-                Event::fire('acorn.model.actionFunction', [$modelFresh, $fnName, $shortClass, $model]);
-                Event::fire("acorn.model.actionFunction.$fnName", [$modelFresh, $shortClass, $model]);
-                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$modelFresh, $model]);
+                Event::fire('acorn.model.actionFunction', [$modelFresh, $fnName, $shortClass, $paramsMerged, $model]);
+                Event::fire("acorn.model.actionFunction.$fnName", [$modelFresh, $shortClass, $paramsMerged, $model]);
+                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$modelFresh, $paramsMerged, $model]);
             }
 
             // Results

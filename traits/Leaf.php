@@ -24,7 +24,8 @@ trait Leaf
             $ret = trans($key);
         } else {
             // Maybe not translated, but we will offer
-            $ret = trans($this->getLeafTableCacheClass());
+            $class = $this->getLeafTableCacheClass();
+            $ret   = ($class ? trans($class) : NULL);
         }
         return $ret;
     }

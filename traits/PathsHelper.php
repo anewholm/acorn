@@ -195,7 +195,7 @@ Trait PathsHelper {
 
     public function singularClassName(?Object $object = NULL): string
     {
-        return (property_exists($this, 'nameSingular') 
+        return (property_exists($this, 'nameSingular')
             ? Str::studly($this->nameSingular)
             : Str::singular($this->unqualifiedClassName($object))
         );
@@ -203,10 +203,19 @@ Trait PathsHelper {
 
     public function pluralClassName(?Object $object = NULL): string
     {
+        // Copied from create-system crudControllerName(): a Model's plural is its table, not Str::plural() of its class
+        // domain_data.fifteen_commerce_pa_disposable_protective_clothing => PaDisposableProtectiveClothing, not ...Clothings
         if (is_null($object)) $object = $this;
-        return (property_exists($object, 'namePlural') 
+        $tableNameParts = ($object instanceof Model
+            ? explode('_', Str::afterLast($object->getTable(), '.'))
+            : []
+        );
+        return (property_exists($object, 'namePlural')
             ? Str::studly($object->namePlural)
-            : Str::plural($this->unqualifiedClassName($object))
+            : (count($tableNameParts) >= 3
+                ? Str::studly(implode('_', array_slice($tableNameParts, 2)))
+                : Str::plural($this->unqualifiedClassName($object))
+            )
         );
     }
 
@@ -373,7 +382,7 @@ Trait PathsHelper {
         return $this->pluralLowerCaseName();
     }
 
-    public function controllerUrl(?string $action = NULL, $id = NULL, ?Object $object = NULL, bool $withBackend = TRUE, bool $throwIfMissing = FALSE): string
+    public function controllerUrl(?string $action = NULL, $id = NULL, ?Object $object = NULL, bool $withBackend = TRUE, bool $throwIfMissing = FALSE): ?string
     {
         // TODO: Use $controller->actionUrl($action, $path)
         $pluginPathPartAuthorPlugin  = $this->pluginPathPartAuthorPlugin();
@@ -450,7 +459,7 @@ Trait PathsHelper {
         $backFieldName = NULL;
         $fieldParts    = HtmlHelper::nameToArray($columnName);
         $finalField    = array_pop($fieldParts);
-       
+
         if ($finalField == 'name') {
             // Back column name legalcase[owner_user_group]
             $backFieldName = $fieldParts[0];
