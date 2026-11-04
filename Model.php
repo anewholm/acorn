@@ -1597,7 +1597,7 @@ SQL;
 
         // Inherit 1to1 BelongsTo relations model action functions
         foreach ($this->belongsTo as $name => $relationDefinition) {
-            if (isset($relationDefinition['type']) && $relationDefinition['type'] == '1to1') {
+            if (isset($relationDefinition['type']) && in_array($relationDefinition['type'], ['1to1', 'Leaf'])) {
                 $this->load($name);
                 if ($relatedModel = $this->getRelation($name)) {
                     if ($relatedModel->actionFunctions) {

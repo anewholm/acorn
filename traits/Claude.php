@@ -35,6 +35,14 @@ trait Claude
     // degrade the caller back to "couldn't determine," not blow up
     // whatever's calling this.
     //
+    // Only an ANSWER is cached, so a question is paid for once. None of
+    // those failures is one -- Claude's own "cannot tell" still comes back
+    // through provide_answer, as an object -- so the question is asked
+    // again next time rather than going unanswered for good. Until
+    // 2026-10-29 a failure was cached as a NULL response (out of API
+    // credit, the laptop and PROD both cached one); such a row is asked
+    // again, and replaced.
+    //
     // $allowDbAccess opts in to a `query_database` tool that lets Claude
     // run its own read-only SELECT statements against this application's
     // database while it works out the answer -- only offered at all when
@@ -59,8 +67,8 @@ trait Claude
 
         $cacheKey = hash('sha256', json_encode([$context, $question, $requiredResponseFormat, $dbAccessGranted]));
         $cached = \Db::table('acorn_claude_cache')->where('cache_key', $cacheKey)->first();
-        if ($cached) {
-            return $cached->response ? json_decode($cached->response, true) : null;
+        if ($cached && !is_null($cached->response)) {
+            return json_decode($cached->response, true);
         }
 
         // provide_answer is the vehicle for a guaranteed-typed final
@@ -134,14 +142,17 @@ trait Claude
             $answer = null;
         }
 
-        \Db::table('acorn_claude_cache')->insert([
-            'cache_key'       => $cacheKey,
-            'context'         => $context,
-            'question'        => $question,
-            'response_format' => json_encode($requiredResponseFormat),
-            'response'        => $answer !== null ? json_encode($answer) : null,
-            'created_at'      => now(),
-        ]);
+        // An answer only -- see this method's own comment. updateOrInsert():
+        // cache_key is unique, and an old failure row may already hold it.
+        if (!is_null($answer)) {
+            \Db::table('acorn_claude_cache')->updateOrInsert(['cache_key' => $cacheKey], [
+                'context'         => $context,
+                'question'        => $question,
+                'response_format' => json_encode($requiredResponseFormat),
+                'response'        => json_encode($answer),
+                'created_at'      => now(),
+            ]);
+        }
 
         return $answer;
     }
