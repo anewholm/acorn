@@ -20,13 +20,13 @@ Trait Dropdowns
             // But we can, if there are no belongsTo
             $builder->select('id', $name);
         }
-        if ($withoutGlobalScopes || (isset($field->config['withoutGlobalScopes']) && $field->config['withoutGlobalScopes'])) 
+        if ($withoutGlobalScopes || (isset($field->config['withoutGlobalScopes']) && $field->config['withoutGlobalScopes']))
             $builder->withoutGlobalScopes();
-        if (isset($field->config['optionsWith'])) 
+        if (isset($field->config['optionsWith']))
             $builder->with($field->config['optionsWith']);
         if ($builder->getModel()->hasRelation('translations'))
             $builder->with('translations');
-        
+
         // optionsWhere:
         // Also implemented in filterFields() for during dependsOn refresh situations
         //   options: Acorn\Lojistiks\Models\ProductInstance::dropdownOptions
@@ -38,7 +38,7 @@ Trait Dropdowns
             $whereProperties = $field->config['optionsWhere'];
             foreach ($whereProperties as $whereProperty => $whereClauses) {
                 if (is_array($whereClauses)) {
-                    // location: 
+                    // location:
                     //   - @source_location
                     //   - sumink
                     // TODO: Relation Extended config options where clause
@@ -46,11 +46,11 @@ Trait Dropdowns
                 } else {
                     $whereValue = $whereClauses;
                     if ($whereValue[0] == '@') {
-                        if (is_null($form)) 
+                        if (is_null($form))
                             throw new Exception('Cannot use dynamic @values without a form');
                         $fieldName  = preg_replace('/_id$/', '', substr($whereValue, 1));
                         $whereField = $form->getField($fieldName);
-                        if (is_null($whereField)) 
+                        if (is_null($whereField))
                             throw new Exception("Field [$fieldName] not found for dynamic @value");
                         $whereValue = $whereField->value;
                     }
@@ -71,7 +71,7 @@ Trait Dropdowns
         );
         $indentationString = (isset($field->config['indentation-string'])
             ? $field->config['indentation-string']
-            : "--&nbsp;"
+            : "--\u{00A0}" // A real non-breaking space, not &nbsp;: option labels are escaped, so an entity would show literally
         );
         $ancestor = (isset($field->config['ancestor'])
             ? $field->config['ancestor']

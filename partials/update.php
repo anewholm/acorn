@@ -1,4 +1,4 @@
-<?php 
+<?php
 // If $this->fatalError, vars will not be available
 $user              = BackendAuth::user();
 $modelIsCreateSystem = (isset($formModel) && $formModel instanceof \Acorn\Model);
@@ -35,8 +35,8 @@ if ($backToReferrer = get('back-to-referrer')) {
 }
 
 // For closing buttons to redirect correctly
-// Would access a custom redirect in the form config    
-// 'action' => 'course-planner', 
+// Would access a custom redirect in the form config
+// 'action' => 'course-planner',
 $dataRequestData = array(
     'close'    => 1,
     'redirect' => $controllerListUrl,
@@ -54,12 +54,12 @@ Block::put('breadcrumb') ?>
             <span class="model-name"><?= e($formModelName) ?></span>
         </li>
     </ul>
-<?php Block::endPut() ?>    
+<?php Block::endPut() ?>
 
 <?php if (!$this->fatalError): ?>
-    
+
     <?php Block::put('form-contents') ?>
-    
+
         <div class="layout-row">
             <?= $this->formRender() ?>
         </div>
@@ -82,13 +82,13 @@ Block::put('breadcrumb') ?>
                     //   redirect: "..."
                     // }}
                     if (isset($_REQUEST['buttons'])) {
-                        if ($buttons = json_decode($_REQUEST['buttons'])) {
+                        if ($buttons = json_decode($_REQUEST['buttons'], TRUE)) {
                             foreach ($buttons as $title => $buttonDefinition) {
                                 $titleEscaped    = e(trans($title));
                                 $redirectEscaped = e(is_string($buttonDefinition)
-                                    ? e($buttonDefinition)
-                                    : (isset($button['redirect'])
-                                        ? e($buttonDefinition['redirect'])
+                                    ? $buttonDefinition
+                                    : (isset($buttonDefinition['redirect'])
+                                        ? $buttonDefinition['redirect']
                                         : '#'
                                     )
                                 );
@@ -106,7 +106,7 @@ Block::put('breadcrumb') ?>
                                         $titleEscaped
                                     </button>
 HTML
-                                );    
+                                );
                             }
                         }
                     }
