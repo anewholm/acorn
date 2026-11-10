@@ -302,17 +302,17 @@ body.advanced .modal-body .control-simplelist li:has(.checkbox > input[name=visi
     margin-left: inherit;
     margin-right: 10px;
 }
-.form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior > .relation-manager > .list-widget > .control-list > .table.table.data tbody td {
+.form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior > .relation-manager > .list-widget > .list-scrollable-container > .control-list > .table.table.data tbody td {
     /* relationmanager */
     padding-top: 8px;
     padding-bottom: 8px;
     border-top-width: 1px;
 }
 .form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior,
-.form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior > .relation-manager > .list-widget > .control-list {
+.form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior > .relation-manager > .list-widget > .list-scrollable-container > .control-list {
     margin-bottom:0px;
 }
-.form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior > .relation-manager > .list-widget > .control-list > .list-footer,
+.form-sidebar .form-elements > .hide-tabs > .form-group > .relation-behavior > .relation-manager > .list-widget > .list-scrollable-container > .control-list > .list-footer,
 .form-sidebar .list-pagination {
     padding-top:0px;
 }
