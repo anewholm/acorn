@@ -85,6 +85,19 @@ class Model extends BaseModel
     public const KEEP_RUNS = FALSE;
     public const EXCLUDE_LINE_BREAKS = FALSE;
 
+    // Leaf & relation Walking options
+    // NO_LOAD: Walk the existing in-memory relation models only
+    const NO_LOAD = 1;
+    // Reload all relations before walking them
+    // will still not callback on a relation that has no models
+    const REFRESH_ALL_RELATIONS = 2;
+    // Only load relations if they have not already been loaded
+    const LOAD_MISSING = 3;
+    // For relations that have only 1 possible model,
+    // run the callback on a new empty Model if there is none associated
+    // Useful for is_a() calculations that just care about the classes involved
+    const SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL = 4;
+
     public $printable = FALSE;
     public $insertAdoptOnly = [];
     protected bool $adoptedOnInsert = FALSE;
@@ -679,55 +692,38 @@ class Model extends BaseModel
 
     public function is_a(BaseModel|string $modelClass, bool $derivedOnly = FALSE): bool
     {
-        // If is_a or belongsTo
-        $is = FALSE;
+        // This class or (also with $derivedOnly) one of its Leaf parents' is,
+        // or extends, $modelClass
+        // A question about classes, so walked on an empty instance: its NULL
+        // keys make each step up an empty model rather than a query, whatever
+        // $this has loaded
         if (!is_string($modelClass)) $modelClass = get_class($modelClass);
-
-        if (!$derivedOnly && is_a($this, $modelClass)) {
-            $is = TRUE;
-        } else {
-            $oneToOneChain = $this->oneToOneChain();
-            foreach ($oneToOneChain as $baseModel) {
-                $baseClass = get_class($baseModel);
-                if ($baseClass == $modelClass) {
-                    $is = TRUE;
-                    break;
-                }
-            }
-        }
+        $is = FALSE;
+        (new static)->walkLeaves(function (self $model) use (&$is, $modelClass): bool {
+            $is = ($model instanceof $modelClass);
+            return !$is;
+        }, [], !$derivedOnly, self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL);
         return $is;
     }
 
     public function baseModel(): ?Model
     {
-        // This can return NULL because the baseModel
-        // might not be attached
-        $oneToOneChain = $this->oneToOneChain();
-        $return = ($oneToOneChain ? end($oneToOneChain) : $this);
-        return $return;
+        // The top of the Leaf chain, $this when it has no Leaf parent
+        // An empty model where a Leaf parent is not attached, as oneToOneChain()
+        return $this->walkLeaves(fn () => TRUE, [], TRUE, self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL)->last();
     }
 
     public function oneToOneChain(bool $existsOnly = FALSE, bool $byClass = FALSE, bool $andSelf = FALSE): array
     {
-        // If the last step is a un-hydrated-non-attached model
-        // then it can be an empty model
-        $modelChain    = [];
-        $model         = $this;
-
-        if ($andSelf && (!$existsOnly || $model->exists)) {
-            $key = ($byClass ? get_class($model) : '.');
-            $modelChain[$key] = $model;
-        }
-
-        $oneToOneChain = self::oneToOneChainFor($this);
-        foreach ($oneToOneChain as $relationName) {
-            $model = ($model->$relationName ?: $model->$relationName()->getRelated());
-            if (!$existsOnly || $model->exists) {
-                $key = ($byClass ? get_class($model) : $relationName);
-                $modelChain[$key] = $model;
-            }
-        }
-
+        // The Leaf chain above $this, nearest first, keyed by the relation
+        // that reaches each model (by class with $byClass, '.' for $this)
+        // A Leaf parent that is not attached is loaded, else an empty model:
+        // dropped again by $existsOnly
+        $modelChain = [];
+        $this->walkLeaves(function (self $model, ?string $relationType, ?string $type, ?string $relationName) use (&$modelChain, $existsOnly, $byClass) {
+            if (!$existsOnly || $model->exists)
+                $modelChain[$byClass ? get_class($model) : ($relationName ?? '.')] = $model;
+        }, [], $andSelf, self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL);
         return $modelChain;
     }
 
@@ -758,76 +754,38 @@ class Model extends BaseModel
 
     public static function oneToOneChainFor(string|Model $model): array
     {
-        // We want static, for existence queries
+        // The relation names of $model's class's Leaf chain, nearest first,
+        // e.g. for joinOneToOnes()
+        // A question about classes, so walked on an empty instance: no queries
         $chain = [];
-        if (is_string($model)) $model = new $model;
-        while ($model && property_exists($model, 'belongsTo')) {
-            // Only type=1to1
-            $oneToOnes = [];
-            foreach ($model->belongsTo as $relationName => $belongsTo) {
-                $type = $belongsTo['type'] ?? NULL;
-                if ($type == '1to1' || $type == 'Leaf')
-                    array_push($oneToOnes, $relationName);
-            }
-            if (count($oneToOnes) == 1) {
-                $relationName = $oneToOnes[0];
-                array_push($chain, $relationName);
-                $model = $model->$relationName()->getRelated();
-            } else {
-                $model = NULL;
-            }
-        }
+        $emptyModel = (is_string($model) ? new $model : $model->newInstance());
+        $emptyModel->walkLeaves(function (self $parent, ?string $relationType, ?string $type, ?string $relationName) use (&$chain) {
+            $chain[] = $relationName;
+        }, [], FALSE, self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL);
         return $chain;
     }
 
     public function parentBaseModel(): ?Model
     {
-        // 1 step up the chain
+        // 1 step up the Leaf chain: the Leaf parent, loaded if need be
+        // NULL when there is none, or it is not attached
         $parentBaseModel = NULL;
-        if (property_exists($this, 'belongsTo')) {
-            // Only type=1to1
-            $oneToOnes = [];
-            foreach ($this->belongsTo as $relationName => $belongsTo) {
-                $type = $belongsTo['type'] ?? NULL;
-                if ($type == '1to1' || $type == 'Leaf')
-                    array_push($oneToOnes, $relationName);
-            }
-            switch (count($oneToOnes)) {
-                case 0:
-                    break;
-                case 1:
-                    $relationName    = $oneToOnes[0];
-                    $parentBaseModel = $this->$relationName;
-                    break;
-                default:
-                    throw new Exception("Multiple 1to1 belongTo parents");
-            }
-        }
+        $this->walkLeaves(function (self $parent) use (&$parentBaseModel): bool {
+            $parentBaseModel = $parent;
+            return FALSE;
+        }, [], FALSE, self::LOAD_MISSING);
         return $parentBaseModel;
     }
 
     public function parentBaseRelationName(): ?string
     {
-        // 1 step up the chain
+        // The relation 1 step up the Leaf chain
+        // A question about classes, so walked on an empty instance: no queries
         $foundRelationName = NULL;
-        if (property_exists($this, 'belongsTo')) {
-            // Only type=1to1
-            $oneToOnes = [];
-            foreach ($this->belongsTo as $relationName => $belongsTo) {
-                $type = $belongsTo['type'] ?? NULL;
-                if ($type == '1to1' || $type == 'Leaf')
-                    array_push($oneToOnes, $relationName);
-            }
-            switch (count($oneToOnes)) {
-                case 0:
-                    break;
-                case 1:
-                    $foundRelationName = $oneToOnes[0];
-                    break;
-                default:
-                    throw new Exception("Multiple 1to1 belongTo parents");
-            }
-        }
+        (new static)->walkLeaves(function (self $parent, ?string $relationType, ?string $type, ?string $relationName) use (&$foundRelationName): bool {
+            $foundRelationName = $relationName;
+            return FALSE;
+        }, [], FALSE, self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL);
         return $foundRelationName;
     }
 
@@ -1595,36 +1553,33 @@ SQL;
             }
         }
 
-        // Inherit 1to1 BelongsTo relations model action functions
-        foreach ($this->belongsTo as $name => $relationDefinition) {
-            if (isset($relationDefinition['type']) && in_array($relationDefinition['type'], ['1to1', 'Leaf'])) {
-                $this->load($name);
-                if ($relatedModel = $this->getRelation($name)) {
-                    if ($relatedModel->actionFunctions) {
-                        // Existing actions take precedence
-                        // Write the sub-model id
-                        foreach ($relatedModel->actionFunctions as $name => &$actionFunctionDefinition) {
-                            $type = $actionFunctionDefinition['type'] ?? NULL;
+        // Inherit the action functions of every Leaf parent up the chain,
+        // nearest first, each freshly loaded: existing actions take precedence
+        // An inherited condition is the parent's own row's, as this model's is
+        // its own: unscoped, it held whenever any row of the parent's table
+        // matched, so a parent's enable and disable both showed at once
+        $this->walkLeaves(function (self $parent) use (&$actionFunctions, $typeLimit) {
+            foreach (($parent->actionFunctions ?: []) as $name => $actionFunctionDefinition) {
+                $type = $actionFunctionDefinition['type'] ?? NULL;
 
-                            if (   is_null($typeLimit)
-                                || ( $type && $typeLimit == $type)
-                                || (!$type && $typeLimit == 'row')
-                            ) {
-                                $condition = $actionFunctionDefinition['condition'] ?? NULL;
-                                if ($condition && !$relatedModel->exists)
-                                    throw new Exception('Related Model does not exist during row type condition evaluation');
-                                if (!$condition || ($relatedModel->whereRaw($condition)->count() != 0)) {
-                                    // Populate the Model/Id for correct lookup later
-                                    $actionFunctionDefinition['model']    = get_class($relatedModel);
-                                    $actionFunctionDefinition['model_id'] = $relatedModel->id;
-                                    $actionFunctions[$name] = $actionFunctionDefinition;
-                                }
-                            }
-                        }
+                if (!isset($actionFunctions[$name])
+                    && (   is_null($typeLimit)
+                        || ( $type && $typeLimit == $type)
+                        || (!$type && $typeLimit == 'row')
+                    )
+                ) {
+                    $condition = $actionFunctionDefinition['condition'] ?? NULL;
+                    if ($condition && !$parent->exists)
+                        throw new Exception('Related Model does not exist during row type condition evaluation');
+                    if (!$condition || $parent->newQuery()->where('id', $parent->id)->whereRaw($condition)->count() != 0) {
+                        // Populate the Model/Id for correct lookup later
+                        $actionFunctionDefinition['model']    = get_class($parent);
+                        $actionFunctionDefinition['model_id'] = $parent->id;
+                        $actionFunctions[$name] = $actionFunctionDefinition;
                     }
                 }
             }
-        }
+        }, [], FALSE, self::REFRESH_ALL_RELATIONS);
 
         return $fnName ? $actionFunctions[$fnName] : $actionFunctions;
     }
@@ -2229,8 +2184,10 @@ SQL;
         // The callback acts on the model the walk HANDS it, never on $this:
         // [$this, 'underMergeDbModel'] would silently drop that argument and
         // under-merge $this once per model in the graph
-        $touched = $this->walkModelHierarchy(fn(Model $model, ?string $relationType = NULL, ?string $type = NULL) => $model->underMergeDbModel());
-        return $touched;
+        $touchedModels = $this->walkModelHierarchy(function(Model $model, ?string $relationType = NULL, ?string $type = NULL) {
+            $model->underMergeDbModel();
+        });
+        return $touchedModels;
     }
 
     public function underMergeDbModel(): Model
@@ -2276,23 +2233,33 @@ SQL;
         return $changed;
     }
 
-    public function walkLeaves(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?bool $includeThis = TRUE): Collection
+    public function walkLeaves(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD): Collection
     {
-        // TODO: Move the above oneToOneChain() suite of methods to use this walkLeaves()
-        return $this->walkModelHierarchy($callback, $classesToIgnore, ['belongsTo'], ['type' => 'Leaf'], $includeThis);
+        // Leaf only, never 1to1: a Leaf is this model's own parent row, a 1to1
+        // is another model that happens to be unique to it
+        return $this->walkModelHierarchy($callback, $classesToIgnore, ['belongsTo'], ['type' => 'Leaf'], $includeThis, $relationLoading);
     }
 
-    public function walkModelHierarchy(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [], ?bool $includeThis = TRUE, ?Model $previousModel = NULL): Collection
+    public function walkModelHierarchy(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [], ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD): Collection
+    {
+        $models = new Collection();
+        $this->walkModelHierarchyRecursive($models, $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, $includeThis, $relationLoading);
+        return $models;
+    }
+
+    protected function walkModelHierarchyRecursive(Collection $models, callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [], ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD, ?Model $previousModel = NULL, ?string $relationType = NULL, ?string $type = NULL, ?string $relationName = NULL): bool
     {
         // The compareFullOneToOneChainTo() traversal, with the comparison
         // replaced by an arbitrary $callback: $this, then every hasMany member,
         // single relation, and the whole 1-1/Leaf chain above it
-        // $callback(Model $model, ?string $relationType = NULL, ?string $type = NULL)
-        $models = new Collection();
+        // $callback(Model $model, ?string $relationType = NULL, ?string $type = NULL, ?string $relationName = NULL)
+        // $relationType, $type and $relationName: the relation that reached
+        // $this, when this is a walk up to a parent, so that its callback
+        // names it as every other model's does. NULL for the model walked from
+        $continue = TRUE;
         if ($includeThis) {
-            $continue = $callback($this, NULL, NULL);
-            if ($continue === FALSE) return $models;
-            $models->add($this);
+            $continue = $callback($this, $relationType, $type, $relationName);
+            if ($continue !== FALSE) $models->add($this);
         }
 
         $relationTypeLists = array();
@@ -2303,25 +2270,49 @@ SQL;
             foreach ($relations as $relationName => $relationDetails) {
                 $relatedClass     = $relationDetails[0];
                 $type             = $relationDetails['type'] ?? NULL;
-                $is1to1           = ($type == '1to1' || $type == 'Leaf');
+                $walkUpType       = ($type == '1to1' || $type == 'Leaf');
 
-                // e.g. 'Leaf' => TRUE, 'Name' => TRUE
+                // e.g. 'Leaf' => TRUE, 'Name' => TRUE, 'type' => ['1to1', 'Leaf']
                 foreach ($relationPropertiesMask as $maskProp => $maskValue) {
-                    if (!isset($relationDetails[$maskProp]) || $relationDetails[$maskProp] !== $maskValue)
-                        continue 2;
+                    if ($continue !== FALSE && isset($relationDetails[$maskProp])) {
+                        // Actually intentionally allows array comparison here
+                        // as the in_array() check will fail for a model array value
+                        $modelValue = $relationDetails[$maskProp];
+                        if (is_array($maskValue) && in_array($modelValue, $maskValue))
+                            continue;
+                        else if ($modelValue === $maskValue) // Including array compare
+                            continue;
+                    }
+                    continue 2;
                 }
 
-                if (!in_array($relatedClass, $classesToIgnore)) {
-                    // Already loaded relations only, unlike compareFullOneToOneChainTo()
-                    // which needs to lazy-load the DB side to compare against
-                    // A walk acts on the prepared graph, and an unloaded relation is
-                    // by definition not part of it: reading $this->$relationName
-                    // instead would drag in every log and state row hanging off
-                    // domain_data, one SELECT each
-                    if (!array_key_exists($relationName, $this->relations)) continue;
-                    if ($this->relations[$relationName] === self::IGNORE_RELATION) continue;
+                if ($continue !== FALSE
+                    && !in_array($relatedClass, $classesToIgnore)
+                    && ($this->relations[$relationName] ?? NULL) !== self::IGNORE_RELATION
+                ) {
+                    $thisRelated = NULL;
+                    switch ($relationLoading) {
+                        case self::NO_LOAD:
+                            $thisRelated = $this->relations[$relationName] ?? NULL;
+                            break;
+                        case self::REFRESH_ALL_RELATIONS:
+                            $this->load($relationName);
+                            $thisRelated = $this->$relationName;
+                            break;
+                        case self::LOAD_MISSING:
+                            $thisRelated = $this->$relationName;
+                            break;
+                        case self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL:
+                            $thisRelated = $this->$relationName;
+                            if (!$thisRelated
+                                || ($thisRelated instanceof Collection && $thisRelated->isEmpty())
+                            ) {
+                                $thisRelated = $this->$relationName()->getRelated();
+                            }
+                            break;
+                    }
 
-                    if ($thisRelated  = $this->relations[$relationName]) {
+                    if ($thisRelated) {
                         // General branch single level relations checks
                         // hasMany will return a Collection
                         if ($thisRelated instanceof Collection) {
@@ -2329,36 +2320,36 @@ SQL;
                                 if ($thisRelatedModel instanceof self
                                     && (!$previousModel || !$previousModel->is($thisRelatedModel))
                                 ) {
-                                    $continue = $callback($thisRelatedModel, $relationType, $type);
-                                    if ($continue === FALSE) return $models;
+                                    $continue = $callback($thisRelatedModel, $relationType, $type, $relationName);
+                                    if ($continue === FALSE) break;
                                     $models->add($thisRelatedModel);
                                 }
                             }
                         }
                         // Travel up the tree and walk all its relations again
                         // The recursion $callback()s $thisRelated itself
-                        else if ($thisRelated instanceof self && $is1to1) {
+                        else if ($thisRelated instanceof self && $walkUpType) {
                             if (!$previousModel || !$previousModel->is($thisRelated))
-                                $models = $models->concat(
-                                    $thisRelated->walkModelHierarchy(
-                                        $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, TRUE, $this
-                                    )
+                                $continue = $thisRelated->walkModelHierarchyRecursive(
+                                    $models, $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, TRUE, $relationLoading, $this,
+                                    $relationType, $type, $relationName
                                 );
                         }
                         // Single model
                         else if ($thisRelated instanceof self) {
                             if (!$previousModel || !$previousModel->is($thisRelated)) {
-                                $continue = $callback($thisRelated, $relationType, $type);
-                                if ($continue === FALSE) return $models;
-                                $models->add($thisRelated);
+                                $continue = $callback($thisRelated, $relationType, $type, $relationName);
+                                if ($continue !== FALSE) $models->add($thisRelated);
                             }
                         }
                     }
                 }
+                if ($continue === FALSE) break;
             }
+            if ($continue === FALSE) break;
         }
 
-        return $models;
+        return ($continue !== FALSE);
     }
 
     /**

@@ -1,11 +1,15 @@
-#layout-sidenav-1 div[role=menu] > a:has(i.acorn-splitter) {
+#layout-sidenav-1 div[role=menu]    > a:has(i.acorn-splitter),
+#layout-sidenav-1 .tw-dropdown-menu > a:has(i.acorn-splitter)
+{
     border-top: 1px solid #d7d7d7;
     border-bottom: 1px solid #e7e7e7;
     padding-top: 0px;
     padding-bottom: 0px;
     padding: 0px;
 }
-#layout-sidenav-1 div[role=menu] > a:has(i.acorn-splitter) > * {
+#layout-sidenav-1 div[role=menu]    > a:has(i.acorn-splitter) > *,
+#layout-sidenav-1 .tw-dropdown-menu > a:has(i.acorn-splitter) > *
+{
     display:none;
 }
 #layout-sidenav-1 .headless-menu:has(a[href*=acorn]) > div > .counter {
@@ -21,7 +25,7 @@
   font-size:0.8em;
 }
 
-/* -------------------------------------- remove some WinterCMS we don't use 
+/* -------------------------------------- remove some WinterCMS we don't use
 #layout-sidenav-1 .headless-menu:has(img[src*=cms-icon]),
 #layout-sidenav-1 .headless-menu:has(img[src*=media-icon]),
 #layout-sidenav-1 .headless-menu:has(img[src*=dashboard-icon]),
@@ -30,7 +34,7 @@
 }
 */
 
-/* WinterCMS settings we don't use 
+/* WinterCMS settings we don't use
 li[data-group-code='system::lang.system.categories.cms'],
 li[data-group-code='system::lang.system.categories.mail'],
 .control-tabs > div > ul.nav-tabs > li:has(a[href='#primarytab-backendlangbackend-preferencescode-editor']),
