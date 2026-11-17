@@ -108,13 +108,6 @@ class Model extends BaseModel
     public $readOnly = FALSE; // For VIEWS
     public $advanced = []; // Advanced fields
 
-    // It is the callers responsibility to decide if
-    // compareTo*() has run or not
-    // [] compared and equal
-    // [...] compared and different
-    // NULL: !->exists in DB or no compare run
-    public ?array $_fields_diff = NULL;
-
     // --------------------------------------------- Translation
     public $implement = ['Acorn.Behaviors.TranslatableModel'];
     public $implementReplaces = ['Winter.Translate.Behaviors.TranslatableModel'];
@@ -737,16 +730,15 @@ class Model extends BaseModel
         // bites: Adapter::newExternalDataIncoming() calls isLeafModel()
         // BEFORE findByIdentifierForThisAdapter() hydrates the id, and
         // Leaf::getLeafHasOnesModel() reads `$this->$name` on each candidate
-        // hasOne looking for the leaf -- so a Product reached compareToDB()
-        // with all ~100 of its pa_* relations cached as NULL, every one of
-        // which then compared NULL against a real DB row and reported a
-        // phantom '(This relation missing)'.
+        // hasOne looking for the leaf -- so a Product arrives with all ~100 of
+        // its pa_* relations cached as NULL, and a later read of any of them
+        // answers that NULL instead of its real row.
         //
         // NULL-valued ONLY: a relation something genuinely set (domain_data,
         // customer, a DRI-created company_status) always holds a model
         // object, so this cannot discard real data. Deliberately CLEARING a
         // relation writes the foreign key ATTRIBUTE, not a NULL relation, so
-        // that still compares and still reports as a change.
+        // that is still saved and still reports as a change.
         foreach ($this->getRelations() as $relationName => $related) {
             if (is_null($related)) $this->unsetRelation($relationName);
         }
@@ -775,6 +767,20 @@ class Model extends BaseModel
             return FALSE;
         }, [], FALSE, self::LOAD_MISSING);
         return $parentBaseModel;
+    }
+
+    public function setParentBaseModel(Model $parentBase): void
+    {
+        // A leaf read from the database points back at the in-memory parent it was read for, so a walk up
+        // from the leaf reaches that parent as it stands, with its getChanges(), not a second copy
+        $baseClass = get_class($parentBase);
+        foreach ($this->belongsTo as $name => $definition) {
+            if (isset($definition[0])
+                && $definition[0] === $baseClass
+                && (($definition['type'] ?? NULL) == 'Leaf' || ($definition['leaf'] ?? FALSE))
+            )
+                $this->setRelation($name, $parentBase);
+        }
     }
 
     public function parentBaseRelationName(): ?string
@@ -2016,164 +2022,31 @@ SQL;
         return $relationMethods;
     }
 
-    public function compareAttributesTo(Model $otherModel, ?array $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $dotPath = []): array
-    {
-        // Direct basic attribute comparison
-        $fieldsDiff = [];
-
-        foreach ($this->attributes as $key => $value) {
-            $isRelationship = (substr($key, -3) == '_id');
-            $isPseudo = (substr($key, 0, 1) == '_');
-            if (!in_array($key, ['id', 'created_at', 'updated_at'])
-                && !$isRelationship
-                && !$isPseudo
-            ) {
-                // Important to retrieve the raw value in the same way
-                // as Laravel may apply filters
-                $thisAttribute  = $this->$key;
-                $otherAttribute = $otherModel->$key;
-                if ($otherAttribute != $thisAttribute) {
-                    $attributeDotPath  = $dotPath;
-                    array_push($attributeDotPath, $key);
-                    if (!is_array($otherAttribute) && !is_array($thisAttribute))
-                        array_push($attributeDotPath, "(Attribute mismatch [$thisAttribute] != [$otherAttribute])");
-                    array_push($fieldsDiff, $attributeDotPath);
-                }
-            }
-        }
-
-        // Persist the Model property above
-        $this->_fields_diff = $fieldsDiff;
-
-        return $fieldsDiff;
-    }
-
-    public function compareFullOneToOneChainTo(Model $otherModel, ?array $fieldsToIgnore = ['id', 'created_at', 'updated_at'], array $classesToIgnore = [User::class, Server::class], bool $enforceCollectionOrder = FALSE, ?array $dotPath = NULL, ?Model $previousModel = NULL): array
-    {
-        // We traverse up the belongsTo 1-1/leaf tree
-        // comparing only $this and the first level of relations
-        // Default dotPath for Customer is [customer]
-        $thisBaseModel   = $this->baseModel();
-        $otherBaseModel  = $otherModel->baseModel();
-        $otherFQClass    = get_class($otherModel);
-
-        // Default dotPath
-        $thisFQClass     = get_class($this);
-        $modelClassParts = explode('\\', $thisFQClass);
-        $modelClass      = end($modelClassParts);
-        if (is_null($dotPath)) $dotPath = [strtolower($modelClass)];
-
-        // Checks
-        if ($thisFQClass != $otherFQClass)
-            throw new Exception("Tried to compare 2 different classes: $thisFQClass != $otherFQClass");
-        if ($this->id && $otherModel->id && $this->id != $otherModel->id)
-            throw new Exception("ID mismatch: $this->id != $otherModel->id");
-
-        // Attributes comparison
-        $fieldsDiff = $this->compareAttributesTo($otherModel, $fieldsToIgnore, $dotPath);
-
-        // Relations Comparison
-        $relations = array_merge($this->belongsTo, $this->hasMany, $this->hasOne);
-        foreach ($relations as $relationName => $relationDetails) {
-            $relatedClass     = $relationDetails[0];
-            $localKey         = $relationDetails['key']  ?? NULL;
-            $type             = $relationDetails['type'] ?? NULL;
-            $is1to1           = ($type == '1to1' || $type == 'Leaf');
-            $relationDotPath  = $dotPath;
-            array_push($relationDotPath, $relationName);
-
-            // Relations to ignore
-            $mentioned = array_key_exists($relationName, $this->relations);
-            if (isset($this->belongsTo[$relationName]))
-                $mentioned = $mentioned || ($localKey && array_key_exists($localKey, $this->attributes));
-            if (in_array($relatedClass, $classesToIgnore)) $mentioned = FALSE;
-            if (($this->relations[$relationName] ?? NULL) === self::IGNORE_RELATION) $mentioned = FALSE;
-            if (!$mentioned) continue;
-
-            $otherRelated = $otherModel->$relationName;
-            $thisRelated  = $this->$relationName;
-
-            if ($thisRelated && $otherRelated) {
-                // General branch single level relations checks
-                // hasMany will return a Collection
-                if ($thisRelated instanceof Collection) {
-                    if ($thisRelated->count() == $otherRelated->count()) {
-                        foreach ($thisRelated as $key => $thisRelatedModel) {
-                            if ($thisRelatedModel instanceof self
-                                && (!$previousModel || !$previousModel->is($thisRelatedModel))
-                            ) {
-                                if ($enforceCollectionOrder) $otherRelatedModel = $otherRelated[$key];
-                                else $otherRelatedModel = $otherRelated->firstWhere('id', $thisRelatedModel->id);
-                                if ($otherRelatedModel) {
-                                    $fieldsDiff = array_merge($fieldsDiff,
-                                        $thisRelatedModel->compareAttributesTo($otherRelatedModel, $fieldsToIgnore, $relationDotPath)
-                                    );
-                                } else {
-                                    $relationDotPathEntry = $relationDotPath;
-                                    array_push($relationDotPathEntry, "$key.$thisRelatedModel->id");
-                                    array_push($relationDotPathEntry, '(Missing DB relation)');
-                                    array_push($fieldsDiff, $relationDotPathEntry);
-                                }
-                            }
-                        }
-                    } else {
-                        // Counts different
-                        $relationDotPathEntry = $relationDotPath;
-                        array_push($relationDotPathEntry, "count()");
-                        array_push($relationDotPathEntry, '(Different relation count())');
-                        array_push($fieldsDiff, $relationDotPathEntry);
-                    }
-                }
-                // Travel up the tree and compare all relations again
-                else if ($thisRelated instanceof self && $is1to1) {
-                    if (!$previousModel || !$previousModel->is($thisRelated))
-                        $fieldsDiff = array_merge($fieldsDiff,
-                            $thisRelated->compareFullOneToOneChainTo($otherRelated, $fieldsToIgnore, $classesToIgnore, $enforceCollectionOrder, $relationDotPath, $this)
-                        );
-                }
-                // Single model
-                else if ($thisRelated instanceof self) {
-                    if (!$previousModel || !$previousModel->is($thisRelated))
-                        $fieldsDiff = array_merge($fieldsDiff,
-                            $thisRelated->compareAttributesTo($otherRelated, $fieldsToIgnore, $relationDotPath)
-                        );
-                }
-            }
-            // 1 or both are NULL
-            else if ($thisRelated) {
-                array_push($relationDotPath, '(DB relation missing)');
-                array_push($fieldsDiff, $relationDotPath);
-            }
-            else if ($otherRelated) {
-                array_push($relationDotPath, '(This relation missing)');
-                array_push($fieldsDiff, $relationDotPath);
-            }
-        }
-
-        // Persist recursive the Model property above
-        $this->_fields_diff = $fieldsDiff;
-
-        return $fieldsDiff;
-    }
-
     public function originalIsEquivalent($key)
     {
-        // PostGreSQL hands numerics back as strings ('4322.0000'), so a mapped
-        // int 4322 under-merged onto that row reads as dirty: Eloquent falls
-        // through to strcmp() for any column without a declared cast
-        // compareAttributesTo() has always compared these loosely (!=), and the
-        // Save/Skip decision now rests on isDirty(), so every numeric column
-        // would otherwise re-fire on every single poll
+        // A raw string can differ where the value does not: PostgreSQL hands numerics back as '4322.0000', and arrays
+        // in its own literal, {ERP}, where a mapped ['ERP'] is written {"ERP"}. So compare the values the model reads,
+        // loosely -- except that NULL only ever equals NULL
         $equivalent = parent::originalIsEquivalent($key);
-
-        if (!$equivalent && array_key_exists($key, $this->original)) {
-            $attribute = $this->attributes[$key] ?? NULL;
-            $original  = $this->original[$key];
-            if (is_numeric($attribute) && is_numeric($original))
-                $equivalent = ($attribute == $original);
+        if (!$equivalent) {
+            $value      = $this->getAttribute($key);
+            $original   = $this->getOriginal($key);
+            $equivalent = (!is_null($value) && !is_null($original) && $value == $original);
         }
 
         return $equivalent;
+    }
+
+    public function refreshAttributes(): ?array
+    {
+        $attributesFromDb = NULL;
+        if ($id = $this->getKey()) {
+            if ($modelFromDb = $this->newQueryWithoutScopes()->findOrFail($id)) {
+                $attributesFromDb = $modelFromDb->getAttributes();
+                $this->setRawAttributes($attributesFromDb, TRUE);
+            }
+        }
+        return $attributesFromDb;
     }
 
     public function underMergeDbModels(): Collection
@@ -2190,7 +2063,7 @@ SQL;
         return $touchedModels;
     }
 
-    public function underMergeDbModel(): Model
+    public function underMergeDbModel(): ?static
     {
         // In-place
         // Loads the Database model, if ->exists, underneath this unsaved prepared model:
@@ -2198,39 +2071,123 @@ SQL;
         // prepare did not set, while each prepared value stays on top
         // Naturally reveals isDirty(), getDirty() and getChanges() for Save/Skip decisions
         // Idempotent: a second under-merge re-applies the same prepared values
+        // Only detects deletion, not creation. That is, !exists => exists is not reported
+        $deleted = FALSE;
         if ($this->exists) {
             if (!$this->id)
                 throw new Exception("Model->exists but no ->id");
             // A prepared model carries an ->original of id only, so without this
             // every mapped attribute reads as dirty
             // No DB row (a stale ->exists, or one hidden by a global scope) leaves
-            // the model exactly as it was: everything dirty, that is, fire, because
-            // "never compared" must never read as "no changes"
+            // the model exactly as it was: everything dirty, so saved and announced,
+            // because a record that could not be compared must never read as unchanged
             if ($dbModel = $this->find($this->id)) {
-                $prepared         = $this->attributes;
-                $this->attributes = $dbModel->attributes;
-                $this->syncOriginal();
-                foreach ($prepared as $key => $value) {
-                    $this->attributes[$key] = $value;
-                }
+                $this->underMergeAttributes($dbModel->attributes);
+            } else {
+                $deleted = TRUE;
             }
         }
 
+        return ($deleted ? NULL : $this);
+    }
+
+    public function underMergeAttributes(array $underAttributes): static
+    {
+        $onTop            = $this->attributes;
+        $this->attributes = $underAttributes;
+        $this->syncOriginal();
+        foreach ($onTop as $key => $value) {
+            $this->attributes[$key] = $value;
+        }
         return $this;
+    }
+
+    public function overMergeDbModels(): Collection
+    {
+        $touchedModels = $this->walkModelHierarchy(function(Model $model, ?string $relationType = NULL, ?string $type = NULL) {
+            $model->overMergeDbModel();
+        });
+        return $touchedModels;
+    }
+
+    public function overMergeDbModel(): ?static
+    {
+        // In-place
+        $deleted = FALSE;
+        if ($this->exists) {
+            if (!$this->id)
+                throw new Exception("Model->exists but no ->id");
+            if ($dbModel = $this->find($this->id)) {
+                $this->overMergeAttributes($dbModel->attributes);
+            } else {
+                $deleted = TRUE;
+            }
+        }
+
+        return ($deleted ? NULL : $this);
+    }
+
+    public function overMergeAttributes(array $onTop): static
+    {
+        foreach ($onTop as $key => $value) {
+            $this->attributes[$key] = $value;
+        }
+        $this->syncChanges();
+        $this->syncOriginal();
+        return $this;
+    }
+
+    public function getHierarchyChanges(): array
+    {
+        // Return walkable with data_get(): TRUE at each changed column's path from $this,
+        // hasMany members merged under their relation name
+        // Return:
+        //   [
+        //     'column1' => TRUE,
+        //     'relation1_hasMany' => [
+        //         0 => [
+        //           'column1' => TRUE,
+        //           ...
+        //         ],
+        //         1 => ...
+        //      ],
+        //     'relation2_belongsTo' => [
+        //         'column1' => TRUE
+        //         ...
+        //      ],
+        //      ...
+        //   ]
+        $hierarchyChanges = array();
+        $this->walkModelHierarchy(function (self $model, ?string $relationType, ?string $type, ?string $relationName, array $dotPath) use (&$hierarchyChanges) {
+            // wasChanged() => hasChanges() => count(getChanges())
+            // getChanges() returns [] for wasRecentlyCreated
+            $changedColumns = ($model->wasRecentlyCreated
+                ? $model->getAttributes()
+                : $model->getChanges()
+            );
+            // Update situations do not return updated_at
+            // Create will also not return updated_at, which should be NULL anyway, for consistency
+            // Create will additionally, correctly, return id and created_at
+            unset($changedColumns[$model->getUpdatedAtColumn()]);
+
+            if ($changedColumns) {
+                foreach ($changedColumns as &$value) $value = TRUE;
+                if ($dotPath) {
+                    $dotArray = data_get($hierarchyChanges, $dotPath, []);
+                    data_set($hierarchyChanges, $dotPath, array_merge($dotArray, $changedColumns), TRUE);
+                } else {
+                    // Top level will have $dotPath = []
+                    $hierarchyChanges = array_merge($hierarchyChanges, $changedColumns);
+                }
+            }
+        });
+        return $hierarchyChanges;
     }
 
     public function wasHierarchyChanged(): bool
     {
-        // walkLeaves() visits loaded relations only, recursing up the 'Leaf'
-        // chain; returning FALSE stops it at the first changed base
-        $changed = FALSE;
-        $this->walkLeaves(function (self $base) use (&$changed): bool {
-            // wasRecentlyCreated covers new Models
-            // wasChanged() covers changed Models
-            $changed = ($base->wasRecentlyCreated || $base->wasChanged());
-            return !$changed;
-        });
-        return $changed;
+        // Essentially $model->wasRecentlyCreated || $model->wasChanged()
+        return (bool) $this->getHierarchyChanges();
     }
 
     public function walkLeaves(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD): Collection
@@ -2242,23 +2199,26 @@ SQL;
 
     public function walkModelHierarchy(callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [], ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD): Collection
     {
-        $models = new Collection();
+        $models  = new Collection();
         $this->walkModelHierarchyRecursive($models, $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, $includeThis, $relationLoading);
         return $models;
     }
 
-    protected function walkModelHierarchyRecursive(Collection $models, callable $callback, ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [], ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD, ?Model $previousModel = NULL, ?string $relationType = NULL, ?string $type = NULL, ?string $relationName = NULL): bool
-    {
-        // The compareFullOneToOneChainTo() traversal, with the comparison
-        // replaced by an arbitrary $callback: $this, then every hasMany member,
-        // single relation, and the whole 1-1/Leaf chain above it
-        // $callback(Model $model, ?string $relationType = NULL, ?string $type = NULL, ?string $relationName = NULL)
+    protected function walkModelHierarchyRecursive(
+        Collection $models, callable $callback,
+        ?array $classesToIgnore = [User::class, Server::class], ?array $relationTypes = ['belongsTo', 'hasMany', 'hasOne'], ?array $relationPropertiesMask = [],
+        ?bool $includeThis = TRUE, ?int $relationLoading = self::NO_LOAD,
+        ?array $dotPath = [], ?Model $previousModel = NULL, ?string $relationType = NULL, ?string $type = NULL, ?string $relationName = NULL
+    ): bool {
+        // Hands $callback every model of the graph: $this, then every hasMany
+        // member, single relation, and the whole 1-1/Leaf chain above it
+        // $callback(Model $model, ?string $relationType = NULL, ?string $type = NULL, ?string $relationName = NULL, ?array $dotPath)
         // $relationType, $type and $relationName: the relation that reached
         // $this, when this is a walk up to a parent, so that its callback
         // names it as every other model's does. NULL for the model walked from
         $continue = TRUE;
         if ($includeThis) {
-            $continue = $callback($this, $relationType, $type, $relationName);
+            $continue = $callback($this, $relationType, $type, $relationName, $dotPath);
             if ($continue !== FALSE) $models->add($this);
         }
 
@@ -2271,6 +2231,7 @@ SQL;
                 $relatedClass     = $relationDetails[0];
                 $type             = $relationDetails['type'] ?? NULL;
                 $walkUpType       = ($type == '1to1' || $type == 'Leaf');
+                $dotPathDown      = array_merge($dotPath, [$relationName]);
 
                 // e.g. 'Leaf' => TRUE, 'Name' => TRUE, 'type' => ['1to1', 'Leaf']
                 foreach ($relationPropertiesMask as $maskProp => $maskValue) {
@@ -2320,7 +2281,8 @@ SQL;
                                 if ($thisRelatedModel instanceof self
                                     && (!$previousModel || !$previousModel->is($thisRelatedModel))
                                 ) {
-                                    $continue = $callback($thisRelatedModel, $relationType, $type, $relationName);
+                                    $dotPathDownX = array_merge($dotPathDown, [$key]);
+                                    $continue = $callback($thisRelatedModel, $relationType, $type, $relationName, $dotPathDownX);
                                     if ($continue === FALSE) break;
                                     $models->add($thisRelatedModel);
                                 }
@@ -2331,14 +2293,14 @@ SQL;
                         else if ($thisRelated instanceof self && $walkUpType) {
                             if (!$previousModel || !$previousModel->is($thisRelated))
                                 $continue = $thisRelated->walkModelHierarchyRecursive(
-                                    $models, $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, TRUE, $relationLoading, $this,
-                                    $relationType, $type, $relationName
+                                    $models, $callback, $classesToIgnore, $relationTypes, $relationPropertiesMask, TRUE, $relationLoading,
+                                    $dotPathDown, $this, $relationType, $type, $relationName
                                 );
                         }
                         // Single model
                         else if ($thisRelated instanceof self) {
                             if (!$previousModel || !$previousModel->is($thisRelated)) {
-                                $continue = $callback($thisRelated, $relationType, $type, $relationName);
+                                $continue = $callback($thisRelated, $relationType, $type, $relationName, $dotPathDown);
                                 if ($continue !== FALSE) $models->add($thisRelated);
                             }
                         }

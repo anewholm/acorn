@@ -998,10 +998,13 @@ HTML;
             }
 
             if (!$readOnly && $model->exists) {
-                $modelFresh = $model->fresh();
-                Event::fire('acorn.model.actionFunction', [$modelFresh, $fnName, $shortClass, $paramsMerged, $model]);
-                Event::fire("acorn.model.actionFunction.$fnName", [$modelFresh, $shortClass, $paramsMerged, $model]);
-                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$modelFresh, $paramsMerged, $model]);
+                // We do not know what the action function did
+                // so we can overMergeDbModel() the intended model
+                // so its getChanges() and isDirty() works
+                $deleted = !$model->overMergeDbModel();
+                Event::fire('acorn.model.actionFunction', [$model, $fnName, $shortClass, $paramsMerged, $deleted]);
+                Event::fire("acorn.model.actionFunction.$fnName", [$model, $shortClass, $paramsMerged, $deleted]);
+                Event::fire("acorn.model.actionFunction.$shortClass.$fnName", [$model, $paramsMerged, $deleted]);
             }
 
             // Results

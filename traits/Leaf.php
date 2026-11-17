@@ -153,7 +153,6 @@ trait Leaf
     public function getLeafTypeModelOrSelf(bool $withoutGlobalScopes = FALSE, bool $recursive = TRUE): Model
     {
         $leafObject = $this->getLeafTypeModel(FALSE, $withoutGlobalScopes, $recursive);
-        if ($leafObject) $leafObject->_fields_diff = $this->_fields_diff;
         return ($leafObject ?: $this);
     }
 
@@ -180,6 +179,8 @@ trait Leaf
             // If not, we need to check each relation 1 by 1 for an object
             $leafObject = $this->getLeafHasOnesModel($withoutGlobalScopes);
         }
+        // Link back
+        if ($leafObject) $leafObject->setParentBaseModel($this);
 
         // This goes beyond the direct central table => star schema
         // it allows traversal of several 1-1 relations out to the central table and on to the star schema
