@@ -40,6 +40,7 @@ use Acorn\Console\CreateSystem\CommentShow;
 use Acorn\Console\CreateSystem\CommentSet;
 use Acorn\Console\CreateSystem\CommentExclude;
 use Acorn\Scopes\GlobalChainScope;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * data_get() that can tell a MISSING key from a NULL value.
@@ -194,6 +195,21 @@ if (! function_exists('Acorn\acorn_data_get')) {
             // raw array so casts and accessors still apply.
             if (array_key_exists($segment, $target->getAttributes()))
                 return [TRUE, $target->getAttribute($segment)];
+
+            // `__<column>` / `__<belongsTo>`: as it stood before the last save or over-merge. Found, and NULL, when it did not
+            // change; a name that is neither a column nor a relation stays not found, so a misspelt path still fails
+            $previousSegment = (str_starts_with($segment, '__') ? substr($segment, 2) : NULL);
+            if ($previousSegment && method_exists($target, 'getPreviouses')) {
+                if (array_key_exists($previousSegment, $target->getAttributes()))
+                    return [TRUE, $target->getPrevious($previousSegment)];
+                if ($target->hasRelation($previousSegment)) {
+                    $relation = $target->$previousSegment();
+                    if (!$relation instanceof BelongsTo)
+                        throw new Exception("__$previousSegment: only a column or a belongsTo has a previous value");
+                    $id = $target->getPrevious($relation->getForeignKeyName());
+                    return [TRUE, ($id ? $relation->getRelated()->newQuery()->find($id) : NULL)];
+                }
+            }
 
             // An already-loaded relation, including one that loaded as NULL.
             if ($target->relationLoaded($segment))

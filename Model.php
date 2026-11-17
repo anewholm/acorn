@@ -107,6 +107,7 @@ class Model extends BaseModel
 
     public $readOnly = FALSE; // For VIEWS
     public $advanced = []; // Advanced fields
+    protected array $previous = [];
 
     // --------------------------------------------- Translation
     public $implement = ['Acorn.Behaviors.TranslatableModel'];
@@ -2036,6 +2037,19 @@ SQL;
 
         return $equivalent;
     }
+
+    public function syncChanges()
+    {
+        parent::syncChanges();
+        // Backport of Laravels later previous
+        // What the changed columns held before: ->original is overwritten by the syncOriginal() that follows,
+        // in save() and in overMergeAttributes() alike, and an outgoing mapping may need the value it replaced
+        $this->previous = array_intersect_key($this->getRawOriginal(), $this->changes);
+        return $this;
+    }
+
+    public function getPreviouses(): array { return $this->previous; }
+    public function getPrevious(mixed $attribute): mixed { return $this->previous[$attribute] ?? NULL; }
 
     public function refreshAttributes(): ?array
     {
