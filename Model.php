@@ -2151,6 +2151,39 @@ SQL;
         return $this;
     }
 
+    protected function hydrateId(int|string $id): void
+    {
+        if (!$id)
+            throw new Exception('Cannot hydrate a model with an empty or zero ID');
+        $keyName = $this->getKeyName();
+        $this->setAttribute($keyName, $id);
+        $this->syncOriginalAttribute($keyName);
+        $this->exists = TRUE;
+    }
+
+    protected function hydrateIdsFrom(self $existingDbModel): void
+    {
+        // The found row's ids onto this prepared model and its whole Leaf chain, nearest first. Each parent is attached
+        // to the model below it, with that model's foreign key set and synced: a partial mapping attaches no parent, and
+        // without this baseModel() would resolve an empty DomainData, and findOrCreate() would write domain_data_id NULL.
+        // The foreign key holds what the database holds, so it must not read back as dirty
+        $dbChain = array_values($existingDbModel->oneToOneChain(FALSE, FALSE, TRUE));
+        $level   = 0;
+        $child   = NULL;
+        $this->walkLeaves(function (self $model, ?string $relationType, ?string $type, ?string $relationName) use ($dbChain, &$level, &$child) {
+            $id = $dbChain[$level++]->getKey();
+            $model->hydrateId($id);
+            if ($child) {
+                $foreignKey = $child->$relationName()->getForeignKeyName();
+                $child->setAttribute($foreignKey, $id);
+                $child->syncOriginalAttribute($foreignKey);
+                $child->setParentBaseModel($model);
+            }
+            $model->unsetNullRelations();
+            $child = $model;
+        }, [], TRUE, self::SINGULAR_RELATIONS_DEFAULT_TO_EMPTY_MODEL);
+    }
+
     public function getHierarchyChanges(): array
     {
         // Return walkable with data_get(): TRUE at each changed column's path from $this,
