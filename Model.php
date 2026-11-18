@@ -2153,6 +2153,8 @@ SQL;
 
     protected function hydrateId(int|string $id): void
     {
+        // This unsaved model becomes the existing row $id: its key set and synced, so the key never reads as dirty
+        // or reaches an UPDATE, and ->exists, so the next save() is an UPDATE, not an INSERT
         if (!$id)
             throw new Exception('Cannot hydrate a model with an empty or zero ID');
         $keyName = $this->getKeyName();
@@ -2163,10 +2165,11 @@ SQL;
 
     protected function hydrateIdsFrom(self $existingDbModel): void
     {
-        // The found row's ids onto this prepared model and its whole Leaf chain, nearest first. Each parent is attached
-        // to the model below it, with that model's foreign key set and synced: a partial mapping attaches no parent, and
-        // without this baseModel() would resolve an empty DomainData, and findOrCreate() would write domain_data_id NULL.
-        // The foreign key holds what the database holds, so it must not read back as dirty
+        // Makes this prepared model and its whole Leaf chain the rows $existingDbModel and its chain already are,
+        // nearest first: each gets its row's id and ->exists, and each parent is attached to the model below it, with
+        // that model's foreign key set and synced. A parent the prepare left unattached would otherwise stay an empty
+        // model, so baseModel() would resolve nothing real. The foreign key holds what the database holds, so it must
+        // not read back as dirty
         $dbChain = array_values($existingDbModel->oneToOneChain(FALSE, FALSE, TRUE));
         $level   = 0;
         $child   = NULL;
